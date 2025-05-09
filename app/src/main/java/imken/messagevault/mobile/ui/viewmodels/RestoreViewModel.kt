@@ -56,17 +56,19 @@ class RestoreViewModel(
     // 权限授予状态
     val permissionsGranted = mutableStateOf(false)
     
-    // 修复第39行的状态流引用问题
+    // 恢复状态
     private val _restoreState = MutableStateFlow<RestoreState>(RestoreState.Idle)
-    val restoreState: StateFlow<RestoreState> = _restoreState
+    val restoreState: StateFlow<RestoreState> = _restoreState.asStateFlow()
 
-    // 修复第54行的SomeType和initialValue引用
-    // 定义一个具体的类型并提供初始值
+    // 恢复进度
     private val _restoreProgress = MutableStateFlow(0)
     val restoreProgress: StateFlow<Int> = _restoreProgress.asStateFlow()
     
     // 是否需要设置为默认短信应用
     val needDefaultSmsApp = mutableStateOf(false)
+    
+    // 恢复的阶段说明
+    val restorePhase = mutableStateOf<String?>(null)
     
     private val TAG = "RestoreViewModel"
     
@@ -124,6 +126,10 @@ class RestoreViewModel(
      * @param backupFile 要恢复的备份文件
      */
     fun restoreBackupFile(backupFile: BackupFile) {
+        // 在日志中强制记录当前是否为默认短信应用
+        val isDefault = isDefaultSmsApp()
+        Timber.i("[Mobile] INFO [Restore] 开始恢复，是否为默认短信应用: $isDefault")
+        
         if (isOperating.value) {
             Timber.w("[Mobile] WARN [Restore] 已有操作正在进行; Context: 用户重复点击")
             return
@@ -140,14 +146,16 @@ class RestoreViewModel(
                 val jsonText = jsonFile.readText()
                 val containsSms = jsonText.contains("\"sms\"") || jsonText.contains("\"messages\"")
                 
-                if (containsSms && !isDefaultSmsApp()) {
+                Timber.d("[Mobile] DEBUG [Restore] 备份文件解析: 包含短信=${containsSms}, 是默认短信应用=${isDefault}")
+                
+                if (containsSms && !isDefault) {
                     Timber.w("[Mobile] WARN [Restore] 需要设置为默认短信应用; Context: 用户尝试恢复包含短信的备份")
                     needDefaultSmsApp.value = true
                     return
                 }
             } else {
                 Timber.e("[Mobile] ERROR [Restore] 备份文件不存在或无法读取; Path: $backupFilePath")
-                if (!isDefaultSmsApp()) {
+                if (!isDefault) {
                     needDefaultSmsApp.value = true
                     return
                 }
@@ -155,36 +163,87 @@ class RestoreViewModel(
         } catch (e: Exception) {
             Timber.e(e, "[Mobile] ERROR [Restore] 检查备份文件是否包含短信时出错; Context: 预检查")
             // 如果无法确定是否包含短信，为安全起见假定包含
-            if (!isDefaultSmsApp()) {
+            if (!isDefault) {
                 needDefaultSmsApp.value = true
                 return
             }
         }
         
+        // 忽略WAP推送权限问题，继续恢复
+        Timber.i("[Mobile] INFO [Restore] 继续恢复过程，忽略WAP推送权限问题")
+        
         viewModelScope.launch {
             isOperating.value = true
-            restoreStatus.value = "正在恢复备份..."
+            _restoreState.value = RestoreState.Preparing
+            restoreStatus.value = "正在准备恢复备份..."
+            _restoreProgress.value = 0
             
             try {
                 Timber.i("%tFT%<tT.%<tLZ [Mobile] INFO [Restore] 开始恢复备份 ${backupFile.fileName}; Context: 用户操作", Date())
                 
-                val result = restoreManager.restoreFromFile(backupFile)
+                // 解析备份文件内容以估算总工作量
+                restorePhase.value = "正在解析备份文件..."
+                _restoreProgress.value = 10
+                val backupData = restoreManager.parseBackupFile(backupFile)
                 
-                withContext(Dispatchers.Main) {
-                    isOperating.value = false
+                if (backupData != null) {
+                    val smsCount = backupData.messages?.size ?: 0
+                    val callLogsCount = backupData.callLogs?.size ?: 0
+                    val contactsCount = backupData.contacts?.size ?: 0
                     
-                    if (result.success) {
-                        restoreStatus.value = result.message
-                        Timber.i("[Mobile] INFO [Restore] 恢复备份成功; Context: ${result.message}")
-                    } else {
-                        restoreStatus.value = result.message
-                        Timber.e("[Mobile] ERROR [Restore] 恢复备份失败; Context: ${result.message}")
+                    Timber.i("[Mobile] INFO [Restore] 备份数据解析完成: SMS=$smsCount, CallLogs=$callLogsCount, Contacts=$contactsCount")
+                    
+                    _restoreProgress.value = 20
+                    
+                    // 更新恢复状态
+                    restorePhase.value = "正在恢复短信、通话记录和联系人..."
+                    _restoreState.value = RestoreState.InProgress(20, "正在恢复短信、通话记录和联系人...")
+                    
+                    // 创建进度更新回调
+                    val progressCallback = RestoreManager.ProgressCallback { phase, progress, detail ->
+                        val calculatedProgress = 20 + (progress * 0.8).toInt() // 20% 到 100% 的范围
+                        _restoreProgress.value = calculatedProgress
+                        restorePhase.value = "$phase: $detail"
+                        _restoreState.value = RestoreState.InProgress(calculatedProgress, "$phase: $detail")
+                        Timber.d("[Mobile] DEBUG [Restore] 进度更新: $phase, $progress%, $detail")
+                    }
+                    
+                    // 调用带进度回调的恢复方法
+                    val result = restoreManager.restoreFromFile(backupFile, progressCallback)
+                    
+                    withContext(Dispatchers.Main) {
+                        isOperating.value = false
+                        _restoreProgress.value = 100
+                        
+                        if (result.success) {
+                            _restoreState.value = RestoreState.Completed(true, result.message)
+                            restoreStatus.value = result.message
+                            restorePhase.value = null
+                            Timber.i("[Mobile] INFO [Restore] 恢复备份成功; Context: ${result.message}")
+                        } else {
+                            _restoreState.value = RestoreState.Completed(false, result.message)
+                            restoreStatus.value = result.message
+                            restorePhase.value = null
+                            Timber.e("[Mobile] ERROR [Restore] 恢复备份失败; Context: ${result.message}")
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        isOperating.value = false
+                        _restoreProgress.value = 0
+                        _restoreState.value = RestoreState.Error("无法解析备份文件")
+                        restoreStatus.value = "恢复失败: 无法解析备份文件"
+                        restorePhase.value = null
+                        Timber.e("[Mobile] ERROR [Restore] 无法解析备份文件; Context: 文件格式可能不兼容")
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     isOperating.value = false
+                    _restoreProgress.value = 0
+                    _restoreState.value = RestoreState.Error(e.message ?: "未知错误")
                     restoreStatus.value = "恢复失败: ${e.message}"
+                    restorePhase.value = null
                     Timber.e(e, "[Mobile] ERROR [Restore] 恢复过程异常; Context: ${e.message}")
                 }
             }
@@ -197,7 +256,12 @@ class RestoreViewModel(
     private fun isDefaultSmsApp(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
-            return context.packageName == defaultSmsPackage
+            val isDefault = context.packageName == defaultSmsPackage
+            
+            // 添加强制日志记录，帮助调试
+            Timber.d("[Mobile] DEBUG [Restore] 默认短信应用检查: 当前=${context.packageName}, 系统默认=$defaultSmsPackage, 是默认=${isDefault}")
+            
+            return isDefault
         }
         return true
     }
@@ -219,6 +283,9 @@ class RestoreViewModel(
      */
     fun resetNeedDefaultSmsApp() {
         needDefaultSmsApp.value = false
+        // 强制检查一次当前是否为默认短信应用
+        val isDefault = isDefaultSmsApp()
+        Timber.i("[Mobile] INFO [Restore] 重置权限检查对话框，当前是否为默认短信应用: $isDefault")
     }
     
     /**

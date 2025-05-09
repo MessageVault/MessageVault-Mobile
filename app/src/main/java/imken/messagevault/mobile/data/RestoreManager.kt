@@ -165,47 +165,135 @@ class RestoreManager(
      * @return 恢复结果
      */
     suspend fun restoreFromFile(backupFile: imken.messagevault.mobile.models.BackupFile): RestoreResult = withContext(Dispatchers.IO) {
+        return@withContext restoreFromFile(backupFile, null)
+    }
+    
+    /**
+     * 进度回调接口
+     * 
+     * @param phase 当前阶段名称
+     * @param progress 百分比进度（0-100）
+     * @param detail 详细信息
+     */
+    fun interface ProgressCallback {
+        fun onProgress(phase: String, progress: Int, detail: String)
+    }
+    
+    /**
+     * 从备份文件恢复数据，带进度报告
+     * 
+     * @param backupFile 备份文件
+     * @param progressCallback 进度回调接口
+     * @return 恢复结果
+     */
+    suspend fun restoreFromFile(
+        backupFile: imken.messagevault.mobile.models.BackupFile, 
+        progressCallback: ProgressCallback?
+    ): RestoreResult = withContext(Dispatchers.IO) {
         try {
             // 添加基础日志
             Timber.d("[Mobile] DEBUG [Restore] 开始恢复文件: ${backupFile.fileName}")
+            progressCallback?.onProgress("准备", 0, "开始恢复文件")
             
             val backupData = parseBackupFile(backupFile) ?: return@withContext RestoreResult(false, "无法解析备份文件")
+            progressCallback?.onProgress("解析", 10, "备份文件解析完成")
             
             // 检查是否需要恢复短信
             val hasSms = !backupData.messages.isNullOrEmpty()
             
             // 如果有短信需要恢复，检查是否为默认短信应用
-            if (hasSms && !isDefaultSmsApp()) {
-                Timber.w("[Mobile] WARN [Restore] 当前应用不是默认短信应用，无法写入短信数据库")
-                return@withContext RestoreResult(
-                    success = false,
-                    message = "恢复短信需要将此应用设为默认短信应用，请在系统设置中更改"
-                )
+            if (hasSms) {
+                val isDefault = isDefaultSmsApp()
+                Timber.i("[Mobile] INFO [Restore] 备份包含短信, 是否为默认短信应用: $isDefault")
+                
+                if (!isDefault) {
+                    Timber.w("[Mobile] WARN [Restore] 当前应用不是默认短信应用，无法写入短信数据库")
+                    return@withContext RestoreResult(
+                        success = false,
+                        message = "恢复短信需要将此应用设为默认短信应用，请在系统设置中更改"
+                    )
+                }
             }
             
             // 恢复短信
-            val restoredSmsCount = backupData.messages?.let { 
-                Timber.d("[Mobile] DEBUG [Restore] 准备恢复短信，数量: ${it.size}")
-                restoreMessages(it) 
-            } ?: 0
+            val messagesSize = backupData.messages?.size ?: 0
+            
+            var restoredSmsCount = 0
+            if (hasSms) {
+                val messages = backupData.messages!!
+                Timber.d("[Mobile] DEBUG [Restore] 准备恢复短信，数量: ${messages.size}")
+                progressCallback?.onProgress("短信", 20, "开始恢复 ${messages.size} 条短信")
+                
+                try {
+                    // 分批恢复短信并报告进度
+                    restoredSmsCount = restoreMessagesWithProgress(messages, progressCallback)
+                    Timber.i("[Mobile] INFO [Restore] 短信恢复结果: 成功恢复 $restoredSmsCount/${messages.size} 条短信")
+                } catch (e: Exception) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 短信恢复过程中发生异常: ${e.message}")
+                }
+            } else {
+                Timber.i("[Mobile] INFO [Restore] 备份不包含短信数据，跳过短信恢复")
+            }
+            
+            progressCallback?.onProgress("短信", 40, "完成短信恢复 ($restoredSmsCount/$messagesSize)")
             
             // 恢复通话记录
-            val restoredCallLogsCount = backupData.callLogs?.let { 
-                Timber.d("[Mobile] DEBUG [Restore] 准备恢复通话记录，数量: ${it.size}")
-                restoreCallLogs(it) 
-            } ?: 0
+            val callLogsSize = backupData.callLogs?.size ?: 0
+            
+            var restoredCallLogsCount = 0
+            if (callLogsSize > 0) {
+                val callLogs = backupData.callLogs!!
+                Timber.d("[Mobile] DEBUG [Restore] 准备恢复通话记录，数量: ${callLogs.size}")
+                progressCallback?.onProgress("通话记录", 50, "开始恢复 ${callLogs.size} 条通话记录")
+                
+                try {
+                    // 分批恢复通话记录并报告进度
+                    restoredCallLogsCount = restoreCallLogsWithProgress(callLogs, progressCallback)
+                    Timber.i("[Mobile] INFO [Restore] 通话记录恢复结果: 成功恢复 $restoredCallLogsCount/${callLogs.size} 条通话记录")
+                } catch (e: Exception) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 通话记录恢复过程中发生异常: ${e.message}")
+                }
+            } else {
+                Timber.i("[Mobile] INFO [Restore] 备份不包含通话记录数据，跳过通话记录恢复")
+            }
+            
+            progressCallback?.onProgress("通话记录", 70, "完成通话记录恢复 ($restoredCallLogsCount/$callLogsSize)")
             
             // 恢复联系人
-            val restoredContactsCount = backupData.contacts?.let { 
-                Timber.d("[Mobile] DEBUG [Restore] 准备恢复联系人，数量: ${it.size}")
-                restoreContacts(it) 
-            } ?: 0
+            val contactsSize = backupData.contacts?.size ?: 0
+            
+            var restoredContactsCount = 0
+            if (contactsSize > 0) {
+                val contacts = backupData.contacts!!
+                Timber.d("[Mobile] DEBUG [Restore] 准备恢复联系人，数量: ${contacts.size}")
+                progressCallback?.onProgress("联系人", 80, "开始恢复 ${contacts.size} 个联系人")
+                
+                try {
+                    // 分批恢复联系人并报告进度
+                    restoredContactsCount = restoreContactsWithProgress(contacts, progressCallback)
+                    Timber.i("[Mobile] INFO [Restore] 联系人恢复结果: 成功恢复 $restoredContactsCount/${contacts.size} 个联系人")
+                } catch (e: Exception) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 联系人恢复过程中发生异常: ${e.message}")
+                }
+            } else {
+                Timber.i("[Mobile] INFO [Restore] 备份不包含联系人数据，跳过联系人恢复")
+            }
+            
+            progressCallback?.onProgress("完成", 100, "恢复完成")
+            
+            // 计算总体结果，即使某个部分失败也应该继续其他部分的恢复
+            val totalSuccess = restoredSmsCount > 0 || restoredCallLogsCount > 0 || restoredContactsCount > 0
+            val resultMessage = if (totalSuccess) {
+                "成功恢复 $restoredSmsCount 条短信、$restoredCallLogsCount 条通话记录和 $restoredContactsCount 位联系人"
+            } else {
+                "恢复失败: 没有任何数据恢复成功"
+            }
             
             Timber.i("[Mobile] INFO [Restore] 恢复完成; 恢复短信: $restoredSmsCount/${backupData.messages?.size ?: 0}, 恢复通话记录: $restoredCallLogsCount/${backupData.callLogs?.size ?: 0}, 恢复联系人: $restoredContactsCount/${backupData.contacts?.size ?: 0}")
             
             return@withContext RestoreResult(
-                success = true,
-                message = "成功恢复 $restoredSmsCount 条短信、$restoredCallLogsCount 条通话记录和 $restoredContactsCount 位联系人"
+                success = totalSuccess,
+                message = resultMessage
             )
         } catch (e: Exception) {
             Timber.e(e, "[Mobile] ERROR [Restore] 恢复数据失败: ${e.message}")
@@ -214,14 +302,15 @@ class RestoreManager(
     }
     
     /**
-     * 恢复短信
-     * 
-     * @param messages 短信列表
-     * @return 成功恢复的短信数量
+     * 分批恢复短信并报告进度
      */
-    private suspend fun restoreMessages(messages: List<Message>): Int = withContext(Dispatchers.IO) {
+    private suspend fun restoreMessagesWithProgress(
+        messages: List<Message>,
+        progressCallback: ProgressCallback?
+    ): Int = withContext(Dispatchers.IO) {
         var restoredCount = 0
-        Timber.i("[Mobile] INFO [Restore] 开始恢复短信，总数: ${messages.size}")
+        val totalCount = messages.size
+        Timber.i("[Mobile] INFO [Restore] 开始恢复短信，总数: $totalCount")
         
         // 检查权限
         if (!hasSmsPermissions()) {
@@ -229,7 +318,10 @@ class RestoreManager(
             return@withContext 0
         }
         
-        messages.forEach { message ->
+        // 计算进度更新频率
+        val progressStep = if (totalCount > 100) totalCount / 20 else 1
+        
+        messages.forEachIndexed { index, message ->
             try {
                 val values = ContentValues().apply {
                     put(Telephony.Sms.ADDRESS, message.address)
@@ -237,12 +329,9 @@ class RestoreManager(
                     put(Telephony.Sms.DATE, message.date)
                     put(Telephony.Sms.DATE_SENT, message.date)
                     put(Telephony.Sms.READ, message.readState ?: 0)
-                    // 注意: 短信类型是硬编码的，我们需要根据短信类型选择正确的URI
                     put(Telephony.Sms.TYPE, message.type)
                     put(Telephony.Sms.STATUS, message.messageStatus ?: 0)
                 }
-                
-                Timber.d("[Mobile] DEBUG [Restore] 尝试恢复短信: 地址=${message.address}, 类型=${message.type}, 日期=${message.date}")
                 
                 // 根据短信类型选择正确的URI
                 val uri = when (message.type) {
@@ -255,24 +344,148 @@ class RestoreManager(
                 
                 if (uri != null) {
                     restoredCount++
-                    Timber.d("[Mobile] DEBUG [Restore] 成功恢复短信: $uri")
                 } else {
                     // 尝试使用通用URI
-                    Timber.w("[Mobile] WARN [Restore] 使用特定URI恢复短信失败，尝试使用通用URI...")
                     val fallbackUri = contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
                     if (fallbackUri != null) {
                         restoredCount++
-                        Timber.d("[Mobile] DEBUG [Restore] 使用通用URI成功恢复短信: $fallbackUri")
-                    } else {
-                        Timber.e("[Mobile] ERROR [Restore] 恢复短信彻底失败: 插入返回null")
                     }
+                }
+                
+                // 报告进度
+                if (index % progressStep == 0 || index == totalCount - 1) {
+                    val currentProgress = ((index + 1) * 100) / totalCount
+                    val progressMessage = "恢复短信进度: ${index + 1}/$totalCount"
+                    progressCallback?.onProgress("短信", currentProgress, progressMessage)
+                    Timber.d("[Mobile] DEBUG [Restore] $progressMessage ($currentProgress%)")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "[Mobile] ERROR [Restore] 恢复短信失败: ID=${message.id}, 地址=${message.address}, ${e.message}")
             }
         }
         
-        Timber.i("[Mobile] INFO [Restore] 短信恢复完成: 成功=$restoredCount, 总数=${messages.size}")
+        Timber.i("[Mobile] INFO [Restore] 短信恢复完成: 成功=$restoredCount, 总数=$totalCount")
+        return@withContext restoredCount
+    }
+    
+    /**
+     * 分批恢复通话记录并报告进度
+     */
+    private suspend fun restoreCallLogsWithProgress(
+        callLogs: List<ModelCallLog>,
+        progressCallback: ProgressCallback?
+    ): Int = withContext(Dispatchers.IO) {
+        var restoredCount = 0
+        val totalCount = callLogs.size
+        Timber.i("[Mobile] INFO [Restore] 开始恢复通话记录，总数: $totalCount")
+        
+        // 计算进度更新频率
+        val progressStep = if (totalCount > 100) totalCount / 10 else 1
+        
+        callLogs.forEachIndexed { index, callLog ->
+            try {
+                val values = ContentValues().apply {
+                    put(CallLog.Calls.NUMBER, callLog.number)
+                    put(CallLog.Calls.TYPE, callLog.type)
+                    put(CallLog.Calls.DATE, callLog.date)
+                    put(CallLog.Calls.DURATION, callLog.duration)
+                    callLog.contact?.let { contactName ->
+                        put(CallLog.Calls.CACHED_NAME, contactName)
+                    }
+                }
+                
+                val uri = contentResolver.insert(CallLog.Calls.CONTENT_URI, values)
+                if (uri != null) {
+                    restoredCount++
+                }
+                
+                // 报告进度
+                if (index % progressStep == 0 || index == totalCount - 1) {
+                    val currentProgress = ((index + 1) * 100) / totalCount
+                    val progressMessage = "恢复通话记录进度: ${index + 1}/$totalCount"
+                    progressCallback?.onProgress("通话记录", currentProgress, progressMessage)
+                    Timber.d("[Mobile] DEBUG [Restore] $progressMessage ($currentProgress%)")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 恢复通话记录失败: ID=${callLog.id}, 号码=${callLog.number}, ${e.message}")
+            }
+        }
+        
+        Timber.i("[Mobile] INFO [Restore] 通话记录恢复完成: 成功=$restoredCount, 总数=$totalCount")
+        return@withContext restoredCount
+    }
+    
+    /**
+     * 分批恢复联系人并报告进度
+     */
+    private suspend fun restoreContactsWithProgress(
+        contacts: List<Contact>,
+        progressCallback: ProgressCallback?
+    ): Int = withContext(Dispatchers.IO) {
+        var restoredCount = 0
+        val totalCount = contacts.size
+        Timber.i("[Mobile] INFO [Restore] 开始恢复联系人，总数: $totalCount")
+        
+        // 检查权限
+        if (!hasContactsPermissions()) {
+            Timber.e("[Mobile] ERROR [Restore] 没有联系人权限，无法恢复联系人")
+            return@withContext 0
+        }
+        
+        // 计算进度更新频率
+        val progressStep = if (totalCount > 100) totalCount / 10 else 1
+        
+        contacts.forEachIndexed { index, contact ->
+            try {
+                val operations = ArrayList<ContentProviderOperation>()
+                
+                // 创建联系人
+                val rawContactInsertIndex = operations.size
+                operations.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                    .build())
+                
+                // 添加姓名
+                operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, rawContactInsertIndex)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, contact.name)
+                    .build())
+                
+                // 添加电话号码
+                contact.phoneNumbers.forEach { phoneNumber ->
+                    operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                        .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, rawContactInsertIndex)
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                        .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, phoneNumber)
+                        .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
+                        .build())
+                }
+                
+                try {
+                    // 应用批处理操作
+                    val results = contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
+                    if (results.isNotEmpty()) {
+                        restoredCount++
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 批处理操作异常: ${e.message}")
+                }
+                
+                // 报告进度
+                if (index % progressStep == 0 || index == totalCount - 1) {
+                    val currentProgress = ((index + 1) * 100) / totalCount
+                    val progressMessage = "恢复联系人进度: ${index + 1}/$totalCount"
+                    progressCallback?.onProgress("联系人", currentProgress, progressMessage)
+                    Timber.d("[Mobile] DEBUG [Restore] $progressMessage ($currentProgress%)")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: ID=${contact.id}, 姓名=${contact.name}, ${e.message}")
+            }
+        }
+        
+        Timber.i("[Mobile] INFO [Restore] 联系人恢复完成: 成功=$restoredCount, 总数=$totalCount")
         return@withContext restoredCount
     }
     
@@ -620,9 +833,8 @@ class RestoreManager(
             val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
             val isDefault = defaultSmsPackage == context.packageName
             
-            if (!isDefault) {
-                Timber.d("[Mobile] DEBUG [Restore] 当前应用不是默认短信应用，默认应用为: $defaultSmsPackage")
-            }
+            // 添加详细日志
+            Timber.d("[Mobile] DEBUG [Restore] 默认短信应用检查 - 当前应用: ${context.packageName}, 系统默认: $defaultSmsPackage, 是默认: $isDefault")
             
             return isDefault
         }

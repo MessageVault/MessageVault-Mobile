@@ -18,6 +18,12 @@
     <!-- RECEIVE_SMS: 允许应用接收短信 - 用于恢复功能 -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     
+    <!-- RECEIVE_MMS: 允许应用接收彩信 - Android高版本需要 -->
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    
+    <!-- RECEIVE_WAP_PUSH: 允许应用接收WAP推送消息 - 用于彩信支持 -->
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    
     <!-- WRITE_CALL_LOG: 允许应用写入通话记录 - 用于恢复功能 -->
     <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
     
