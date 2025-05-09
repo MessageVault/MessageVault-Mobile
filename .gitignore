@@ -1,5 +1,6 @@
 # 编译输出
 /build/
+/*/build/
 /bin/
 /target/
 /out/
@@ -17,7 +18,6 @@
 .externalNativeBuild/
 .cxx/
 *.ap_
-*.ap_.d
 *.jks
 *.keystore
 google-services.json
@@ -56,7 +56,11 @@ Thumbs.db
 # Java heap dump files
 *.hprof
 java_pid*.hprof
-/java_pid*.hprof
 
-# 添加其他需要忽略的文件类型...
-
+# BuildConfig文件和资源文件
+/app/build/generated/
+/app/build/intermediates/
+/app/build/kotlin/
+/app/build/outputs/
+/app/build/tmp/
+/build_debug_log.txt
