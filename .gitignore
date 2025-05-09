@@ -1,0 +1,62 @@
+# 编译输出
+/build/
+/bin/
+/target/
+/out/
+*.class
+*.jar
+*.war
+*.ear
+
+# Android 特定文件
+*.apk
+*.aab
+*.aar
+*.dex
+/captures/
+.externalNativeBuild/
+.cxx/
+*.ap_
+*.ap_.d
+*.jks
+*.keystore
+google-services.json
+firebase_credentials.json
+
+# 临时文件和日志
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+.gradle/
+local.properties
+
+# IDE文件
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+.gradle
+.navigation/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 大型媒体和二进制文件
+*.mp4
+*.mp3
+*.zip
+*.tar.gz
+*.rar
+
+# Java heap dump files
+*.hprof
+java_pid*.hprof
+/java_pid*.hprof
+
+# 添加其他需要忽略的文件类型...
+

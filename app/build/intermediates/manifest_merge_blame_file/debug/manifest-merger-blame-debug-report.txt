@@ -1,0 +1,231 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="imken.messagevault.mobile"
+4    android:versionCode="1"
+5    android:versionName="0.0.1alpha_debug" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="24"
+9        android:targetSdkVersion="34" />
+10
+11    <!-- 权限声明 -->
+12    <!-- READ_SMS: 允许应用读取设备上的短信消息 - 用于备份短信内容 -->
+13    <uses-permission android:name="android.permission.READ_SMS" />
+13-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:7:5-67
+13-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:7:22-64
+14
+15    <!-- READ_CALL_LOG: 允许应用读取通话记录 - 用于备份通话历史 -->
+16    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+16-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:10:5-72
+16-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:10:22-69
+17
+18    <!-- READ_CONTACTS: 允许备份联系人 -->
+19    <uses-permission android:name="android.permission.READ_CONTACTS" />
+19-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:13:5-72
+19-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:13:22-69
+20
+21    <!-- WRITE_SMS: 允许应用写入短信消息 - 用于恢复功能 -->
+22    <uses-permission android:name="android.permission.SEND_SMS" />
+22-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:16:5-67
+22-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:16:22-64
+23
+24    <!-- WRITE_CALL_LOG: 允许应用写入通话记录 - 用于恢复功能 -->
+25    <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+25-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:19:5-73
+25-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:19:22-70
+26
+27    <!-- WRITE_CONTACTS: 允许备份联系人 -->
+28    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+28-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:22:5-73
+28-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:22:22-70
+29
+30    <!-- INTERNET: 允许应用连接互联网 - 用于将备份数据发送到服务器 -->
+31    <uses-permission android:name="android.permission.INTERNET" />
+31-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:25:5-67
+31-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:25:22-64
+32
+33    <!-- ACCESS_NETWORK_STATE: 允许应用检查网络连接状态 - 用于在发送数据前确认网络可用 -->
+34    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+34-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:28:5-79
+34-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:28:22-76
+35
+36    <!--
+37         WRITE_EXTERNAL_STORAGE: 允许应用写入外部存储 - 用于本地备份文件
+38         注意：对于API 29及以上版本，应使用分区存储代替此权限
+39    -->
+40    <uses-permission
+40-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:32:5-33:51
+41        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+41-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:32:22-78
+42        android:maxSdkVersion="28" />
+42-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:33:22-48
+43
+44    <permission
+44-->[androidx.core:core:1.12.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\d93daeba95336e62ce5dca53facd2baf\transformed\core-1.12.0\AndroidManifest.xml:22:5-24:47
+45        android:name="imken.messagevault.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+45-->[androidx.core:core:1.12.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\d93daeba95336e62ce5dca53facd2baf\transformed\core-1.12.0\AndroidManifest.xml:23:9-81
+46        android:protectionLevel="signature" />
+46-->[androidx.core:core:1.12.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\d93daeba95336e62ce5dca53facd2baf\transformed\core-1.12.0\AndroidManifest.xml:24:9-44
+47
+48    <uses-permission android:name="imken.messagevault.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+48-->[androidx.core:core:1.12.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\d93daeba95336e62ce5dca53facd2baf\transformed\core-1.12.0\AndroidManifest.xml:26:5-97
+48-->[androidx.core:core:1.12.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\d93daeba95336e62ce5dca53facd2baf\transformed\core-1.12.0\AndroidManifest.xml:26:22-94
+49    <!--
+50 可扩展点：将来可能需要的额外权限
+51         - RECEIVE_BOOT_COMPLETED: 允许开机自启动备份服务 
+52    -->
+53    <application
+53-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:39:5-78:19
+54        android:allowBackup="true"
+54-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:40:9-35
+55        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+55-->[androidx.core:core:1.12.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\d93daeba95336e62ce5dca53facd2baf\transformed\core-1.12.0\AndroidManifest.xml:28:18-86
+56        android:debuggable="true"
+57        android:enableOnBackInvokedCallback="true"
+57-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:45:9-51
+58        android:extractNativeLibs="false"
+59        android:icon="@mipmap/ic_launcher"
+59-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:41:9-43
+60        android:label="@string/app_name"
+60-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:42:9-41
+61        android:roundIcon="@mipmap/ic_launcher_round"
+61-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:43:9-54
+62        android:supportsRtl="true"
+62-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:44:9-35
+63        android:testOnly="true"
+64        android:theme="@style/Theme.MessageVault" >
+64-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:46:9-50
+65
+66        <!-- 主活动 - 应用入口点 -->
+67        <activity
+67-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:49:9-57:20
+68            android:name="imken.messagevault.mobile.MainActivity"
+68-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:50:13-41
+69            android:exported="true"
+69-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:51:13-36
+70            android:theme="@style/Theme.MessageVault" >
+70-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:52:13-54
+71            <intent-filter>
+71-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:53:13-56:29
+72                <action android:name="android.intent.action.MAIN" />
+72-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:54:17-69
+72-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:54:25-66
+73
+74                <category android:name="android.intent.category.LAUNCHER" />
+74-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:55:17-77
+74-->D:\MyOpenDev\MessageVault\MessageVault-Mobile\app\src\main\AndroidManifest.xml:55:27-74
+75            </intent-filter>
+76        </activity>
+77
+78        <!--
+79        可扩展点：后台服务组件
+80        <service
+81            android:name=".service.BackupService"
+82            android:enabled="true"
+83            android:exported="false" />
+84        
+85        <receiver
+86            android:name=".receiver.BackupAlarmReceiver"
+87            android:enabled="true"
+88            android:exported="false" />
+89        -->
+90
+91
+92        <!--
+93        可扩展点：内容提供者，用于共享备份数据
+94        <provider
+95            android:name=".provider.MessageVaultProvider"
+96            android:authorities="imken.messagevault.mobile.provider"
+97            android:enabled="true"
+98            android:exported="false" />
+99        -->
+100        <activity
+100-->[androidx.compose.ui:ui-test-manifest:1.6.4] F:\Gradle\AndroidStudioGradle\caches\transforms-3\e828d2a3923f42f1be3dd0be6c673e92\transformed\jetified-ui-test-manifest-1.6.4\AndroidManifest.xml:23:9-25:39
+101            android:name="androidx.activity.ComponentActivity"
+101-->[androidx.compose.ui:ui-test-manifest:1.6.4] F:\Gradle\AndroidStudioGradle\caches\transforms-3\e828d2a3923f42f1be3dd0be6c673e92\transformed\jetified-ui-test-manifest-1.6.4\AndroidManifest.xml:24:13-63
+102            android:exported="true" />
+102-->[androidx.compose.ui:ui-test-manifest:1.6.4] F:\Gradle\AndroidStudioGradle\caches\transforms-3\e828d2a3923f42f1be3dd0be6c673e92\transformed\jetified-ui-test-manifest-1.6.4\AndroidManifest.xml:25:13-36
+103        <activity
+103-->[androidx.compose.ui:ui-tooling-android:1.6.4] F:\Gradle\AndroidStudioGradle\caches\transforms-3\c9d4994b8db5f301b44c236baf116f1f\transformed\jetified-ui-tooling-release\AndroidManifest.xml:23:9-25:39
+104            android:name="androidx.compose.ui.tooling.PreviewActivity"
+104-->[androidx.compose.ui:ui-tooling-android:1.6.4] F:\Gradle\AndroidStudioGradle\caches\transforms-3\c9d4994b8db5f301b44c236baf116f1f\transformed\jetified-ui-tooling-release\AndroidManifest.xml:24:13-71
+105            android:exported="true" />
+105-->[androidx.compose.ui:ui-tooling-android:1.6.4] F:\Gradle\AndroidStudioGradle\caches\transforms-3\c9d4994b8db5f301b44c236baf116f1f\transformed\jetified-ui-tooling-release\AndroidManifest.xml:25:13-36
+106
+107        <provider
+107-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:24:9-32:20
+108            android:name="androidx.startup.InitializationProvider"
+108-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:25:13-67
+109            android:authorities="imken.messagevault.mobile.androidx-startup"
+109-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:26:13-68
+110            android:exported="false" >
+110-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:27:13-37
+111            <meta-data
+111-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:29:13-31:52
+112                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+112-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:30:17-75
+113                android:value="androidx.startup" />
+113-->[androidx.emoji2:emoji2:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\92fe67c1aa90cad79bb5539e7f7befd0\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:31:17-49
+114            <meta-data
+114-->[androidx.lifecycle:lifecycle-process:2.7.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\def17c48fa219c9fb71e97ff8baa9a86\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:29:13-31:52
+115                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+115-->[androidx.lifecycle:lifecycle-process:2.7.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\def17c48fa219c9fb71e97ff8baa9a86\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:30:17-78
+116                android:value="androidx.startup" />
+116-->[androidx.lifecycle:lifecycle-process:2.7.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\def17c48fa219c9fb71e97ff8baa9a86\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:31:17-49
+117            <meta-data
+117-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:29:13-31:52
+118                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+118-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:30:17-85
+119                android:value="androidx.startup" />
+119-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:31:17-49
+120        </provider>
+121
+122        <service
+122-->[androidx.room:room-runtime:2.6.1] F:\Gradle\AndroidStudioGradle\caches\transforms-3\9f0dbfc0bce92a4d70240e9ad735e784\transformed\room-runtime-2.6.1\AndroidManifest.xml:24:9-28:63
+123            android:name="androidx.room.MultiInstanceInvalidationService"
+123-->[androidx.room:room-runtime:2.6.1] F:\Gradle\AndroidStudioGradle\caches\transforms-3\9f0dbfc0bce92a4d70240e9ad735e784\transformed\room-runtime-2.6.1\AndroidManifest.xml:25:13-74
+124            android:directBootAware="true"
+124-->[androidx.room:room-runtime:2.6.1] F:\Gradle\AndroidStudioGradle\caches\transforms-3\9f0dbfc0bce92a4d70240e9ad735e784\transformed\room-runtime-2.6.1\AndroidManifest.xml:26:13-43
+125            android:exported="false" />
+125-->[androidx.room:room-runtime:2.6.1] F:\Gradle\AndroidStudioGradle\caches\transforms-3\9f0dbfc0bce92a4d70240e9ad735e784\transformed\room-runtime-2.6.1\AndroidManifest.xml:27:13-37
+126
+127        <receiver
+127-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:34:9-52:20
+128            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+128-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:35:13-76
+129            android:directBootAware="false"
+129-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:36:13-44
+130            android:enabled="true"
+130-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:37:13-35
+131            android:exported="true"
+131-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:38:13-36
+132            android:permission="android.permission.DUMP" >
+132-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:39:13-57
+133            <intent-filter>
+133-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:40:13-42:29
+134                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+134-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:41:17-91
+134-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:41:25-88
+135            </intent-filter>
+136            <intent-filter>
+136-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:43:13-45:29
+137                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+137-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:44:17-85
+137-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:44:25-82
+138            </intent-filter>
+139            <intent-filter>
+139-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:46:13-48:29
+140                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+140-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:47:17-88
+140-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:47:25-85
+141            </intent-filter>
+142            <intent-filter>
+142-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:49:13-51:29
+143                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+143-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:50:17-95
+143-->[androidx.profileinstaller:profileinstaller:1.3.0] F:\Gradle\AndroidStudioGradle\caches\transforms-3\a687fad07ff2147abcb5a2c0dd43665b\transformed\jetified-profileinstaller-1.3.0\AndroidManifest.xml:50:25-92
+144            </intent-filter>
+145        </receiver>
+146    </application>
+147
+148</manifest>

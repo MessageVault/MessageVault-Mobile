@@ -1,0 +1,13 @@
+task fullClean(type: Delete) {
+    description = 'Clean build artifacts, Gradle cache and project build directories'
+    group = 'build'
+    
+    delete 'build'
+    delete '.gradle'
+    
+    subprojects {
+        delete 'build'
+        delete '.gradle'
+        delete 'app/build'
+    }
+}

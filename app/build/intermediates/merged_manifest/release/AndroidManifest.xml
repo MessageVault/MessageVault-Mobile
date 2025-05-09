@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="imken.messagevault.mobile"
+    android:versionCode="1"
+    android:versionName="0.0.1alpha_debug" >
+
+    <uses-sdk
+        android:minSdkVersion="24"
+        android:targetSdkVersion="34" />
+
+    <!-- 权限声明 -->
+    <!-- READ_SMS: 允许应用读取设备上的短信消息 - 用于备份短信内容 -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- READ_CALL_LOG: 允许应用读取通话记录 - 用于备份通话历史 -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+
+    <!-- READ_CONTACTS: 允许备份联系人 -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- WRITE_SMS: 允许应用写入短信消息 - 用于恢复功能 -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <!-- WRITE_CALL_LOG: 允许应用写入通话记录 - 用于恢复功能 -->
+    <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+
+    <!-- WRITE_CONTACTS: 允许备份联系人 -->
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+
+    <!-- INTERNET: 允许应用连接互联网 - 用于将备份数据发送到服务器 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- ACCESS_NETWORK_STATE: 允许应用检查网络连接状态 - 用于在发送数据前确认网络可用 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+         WRITE_EXTERNAL_STORAGE: 允许应用写入外部存储 - 用于本地备份文件
+         注意：对于API 29及以上版本，应使用分区存储代替此权限
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <permission
+        android:name="imken.messagevault.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="imken.messagevault.mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+    <!--
+ 可扩展点：将来可能需要的额外权限
+         - RECEIVE_BOOT_COMPLETED: 允许开机自启动备份服务 
+    -->
+    <application
+        android:allowBackup="true"
+        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+        android:enableOnBackInvokedCallback="true"
+        android:extractNativeLibs="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MessageVault" >
+
+        <!-- 主活动 - 应用入口点 -->
+        <activity
+            android:name="imken.messagevault.mobile.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MessageVault" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+        可扩展点：后台服务组件
+        <service
+            android:name=".service.BackupService"
+            android:enabled="true"
+            android:exported="false" />
+        
+        <receiver
+            android:name=".receiver.BackupAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        -->
+
+
+        <!--
+        可扩展点：内容提供者，用于共享备份数据
+        <provider
+            android:name=".provider.MessageVaultProvider"
+            android:authorities="imken.messagevault.mobile.provider"
+            android:enabled="true"
+            android:exported="false" />
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="imken.messagevault.mobile.androidx-startup"
+            android:exported="false" >
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                android:value="androidx.startup" />
+            <meta-data
+                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+                android:value="androidx.startup" />
+            <meta-data
+                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                android:value="androidx.startup" />
+        </provider>
+
+        <service
+            android:name="androidx.room.MultiInstanceInvalidationService"
+            android:directBootAware="true"
+            android:exported="false" />
+
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            android:directBootAware="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.DUMP" >
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

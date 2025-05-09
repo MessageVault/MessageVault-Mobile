@@ -1,0 +1,144 @@
+// 应用必要的插件
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'imken.messagevault.mobile'
+    
+    compileSdkVersion 34
+    
+    // 添加SDK工具选项，兼容版本差异
+    ndkVersion "21.4.7075529"
+    buildToolsVersion "33.0.2"
+    
+    defaultConfig {
+        applicationId "imken.messagevault.mobile"
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 1
+        versionName '0.0.1alpha_debug'
+        
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary true
+        }
+        
+        // 配置Room架构
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += [
+                    "room.schemaLocation": "$projectDir/schemas",
+                    "room.incremental": "true",
+                    "room.expandProjection": "true"
+                ]
+            }
+        }
+    }
+    
+    buildFeatures {
+        compose true
+        // 启用 BuildConfig 生成
+        buildConfig true
+    }
+    
+    composeOptions {
+        kotlinCompilerExtensionVersion rootProject.ext.compose_compiler_version
+    }
+    
+    // 可以选择在ComposeOptions下添加这个选项来抑制版本检查（但不推荐）
+    // freeCompilerArgs += ["-P", "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"]
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // 添加调试配置以在构建时输出更多信息
+            testCoverageEnabled false
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17 // 更新为JDK 17
+        targetCompatibility JavaVersion.VERSION_17 // 更新为JDK 17
+    }
+    
+    kotlinOptions {
+        jvmTarget = '17' // 从1.8更新为17，与Java版本保持一致
+        freeCompilerArgs += [
+            "-opt-in=kotlin.RequiresOptIn",
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
+        ]
+    }
+    
+    packagingOptions {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+    
+    // 移除错误的androidResources块，使用替代配置
+    // 解决清单文件包名警告的替代方法
+    lint {
+        // 如果需要忽略清单文件中package属性警告，可以添加以下配置
+        disable 'ManifestPackageNameNeeded'
+    }
+}
+
+dependencies {
+    // AndroidX 核心库
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+    
+    // Compose相关库
+    implementation platform('androidx.compose:compose-bom:2023.10.01')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'com.google.android.material:material:1.11.0'  // 添加Material库以支持Material3主题
+    implementation 'androidx.activity:activity-compose:1.8.2'
+    
+    // 导航组件
+    implementation 'androidx.navigation:navigation-compose:2.7.7'
+    
+    // 图标库
+    implementation 'androidx.compose.material:material-icons-extended:1.6.4'
+    
+    // ViewModel 支持
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    
+    // 数据存储
+    implementation 'androidx.datastore:datastore-preferences:1.0.0'
+    
+    // Retrofit网络库
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    
+    // Gson
+    implementation 'com.google.code.gson:gson:2.10.1'
+    
+    // Room数据库
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+    annotationProcessor 'androidx.room:room-compiler:2.6.1'
+    
+    // 日志库
+    implementation 'com.jakewharton.timber:timber:5.0.1'
+    
+    // 测试库
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation platform('androidx.compose:compose-bom:2023.10.01')
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    
+    // 调试工具
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+}
+

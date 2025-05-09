@@ -1,0 +1,516 @@
+package imken.messagevault.mobile.data
+
+import android.content.ContentValues
+import android.content.Context
+import android.provider.CallLog
+import android.provider.Telephony
+import android.util.Log
+import com.google.gson.Gson
+import imken.messagevault.mobile.api.ApiClient
+import imken.messagevault.mobile.config.Config
+import imken.messagevault.mobile.data.entity.CallLogsEntity
+import imken.messagevault.mobile.data.entity.ContactsEntity
+import imken.messagevault.mobile.data.entity.MessageEntity
+import imken.messagevault.mobile.data.models.BackupFile
+import imken.messagevault.mobile.data.models.BackupFileInfo
+import imken.messagevault.mobile.model.BackupData
+import imken.messagevault.mobile.model.Contact
+import imken.messagevault.mobile.model.Message
+import imken.messagevault.mobile.utils.Constants.SUPPORTED_VERSION
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+import java.io.File
+import java.io.FileReader
+import java.util.Date
+import java.util.UUID
+import imken.messagevault.mobile.model.CallLog as ModelCallLog
+import android.provider.ContactsContract
+import com.google.gson.reflect.TypeToken
+import imken.messagevault.mobile.BuildConfig
+import android.provider.Settings
+import imken.messagevault.mobile.models.MessageData
+import android.content.ContentProviderOperation
+import android.content.ContentResolver
+import android.content.OperationApplicationException
+import android.net.Uri
+import android.os.RemoteException
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * 恢复管理器
+ * 
+ * 负责从备份文件恢复数据
+ * 
+ * @param context 应用上下文
+ * @param config 应用配置
+ * @param apiClient API客户端
+ */
+class RestoreManager(
+    private val context: Context,
+    private val config: Config,
+    private val apiClient: ApiClient
+) {
+    private val gson = Gson()
+    private val contentResolver: ContentResolver = context.contentResolver
+    private val TAG = "RestoreManager"
+    private var successCount = 0
+    private var failureCount = 0
+    
+    /**
+     * 获取可用的备份文件列表
+     * 
+     * @return 备份文件列表
+     */
+    suspend fun getAvailableBackups(): List<BackupFile> = withContext(Dispatchers.IO) {
+        val backupFiles = mutableListOf<BackupFile>()
+        
+        try {
+            // 使用config获取备份目录名称而不是硬编码字符串
+            val backupDir = File(context.getExternalFilesDir(null), config.getBackupDirectoryName())
+            
+            // 检查备份目录是否存在
+            if (!backupDir.exists()) {
+                Timber.w("[Mobile] WARN [Restore] 备份目录不存在: ${backupDir.absolutePath}")
+                return@withContext emptyList<BackupFile>()
+            }
+            
+            // 获取备份目录中的所有JSON文件
+            val files = backupDir.listFiles { file ->
+                file.isFile && file.name.endsWith(".json", ignoreCase = true)
+            }
+            
+            if (files != null) {
+                // 过滤无效的备份文件
+                val validFiles = files.filter { validateBackupFile(it) }
+                backupFiles.addAll(validFiles.map { 
+                    BackupFile(
+                        id = UUID.randomUUID().toString(),
+                        deviceId = Settings.Secure.getString(
+                            context.contentResolver, 
+                            Settings.Secure.ANDROID_ID
+                        ) ?: "unknown",
+                        fileName = it.name,
+                        timestamp = it.lastModified(),
+                        appVersion = BuildConfig.VERSION_NAME,
+                        size = it.length(),
+                        localFile = it
+                    )
+                }.sortedByDescending { it.timestamp })
+                Timber.i("[Mobile] INFO [Restore] 找到 ${validFiles.size} 个有效备份文件，总共 ${files.size} 个文件")
+            } else {
+                Timber.w("[Mobile] WARN [Restore] 无法列出备份目录中的文件: ${backupDir.absolutePath}")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Restore] 获取备份文件列表失败: ${e.message}")
+        }
+        
+        return@withContext backupFiles
+    }
+    
+    /**
+     * 解析备份文件
+     * 
+     * @param backupFile 备份文件
+     * @return 备份数据对象，如果解析失败则返回null
+     */
+    suspend fun parseBackupFile(backupFile: BackupFile): BackupData? = withContext(Dispatchers.IO) {
+        try {
+            val file = backupFile.localFile ?: throw IllegalArgumentException("备份文件为空")
+            FileReader(file).use { reader ->
+                val typeToken = object : TypeToken<BackupData>() {}.type
+                val backupData = gson.fromJson<BackupData>(reader, typeToken)
+                if (backupData == null) {
+                    Timber.e("[Mobile] ERROR [Restore] 解析备份文件返回null: ${backupFile.fileName}")
+                    return@withContext null
+                }
+                
+                // 检查消息列表是否为null，如果是则设置为空列表
+                val messagesCount = backupData.messages?.size ?: 0
+                val callLogsCount = backupData.callLogs?.size ?: 0
+                val contactsCount = backupData.contacts?.size ?: 0
+                
+                Timber.i("[Mobile] INFO [Restore] 成功解析备份文件: ${backupFile.fileName}, 短信数量: $messagesCount, 通话记录数量: $callLogsCount, 联系人数量: $contactsCount")
+                return@withContext backupData
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Restore] 解析备份文件失败: ${backupFile.fileName}, ${e.message}")
+            return@withContext null
+        }
+    }
+    
+    /**
+     * 从备份文件恢复数据
+     * 
+     * @param backupFile 备份文件
+     * @return 恢复结果
+     */
+    suspend fun restoreFromFile(backupFile: BackupFile): RestoreResult = withContext(Dispatchers.IO) {
+        try {
+            // 添加基础日志
+            Timber.d("[Mobile] DEBUG [Restore] 开始恢复文件: ${backupFile.fileName}")
+            
+            val backupData = parseBackupFile(backupFile) ?: return@withContext RestoreResult(false, "无法解析备份文件")
+            
+            // 恢复短信
+            val restoredSmsCount = backupData.messages?.let { 
+                Timber.d("[Mobile] DEBUG [Restore] 准备恢复短信，数量: ${it.size}")
+                restoreMessages(it) 
+            } ?: 0
+            
+            // 恢复通话记录
+            val restoredCallLogsCount = backupData.callLogs?.let { 
+                Timber.d("[Mobile] DEBUG [Restore] 准备恢复通话记录，数量: ${it.size}")
+                restoreCallLogs(it) 
+            } ?: 0
+            
+            // 恢复联系人
+            val restoredContactsCount = backupData.contacts?.let { 
+                Timber.d("[Mobile] DEBUG [Restore] 准备恢复联系人，数量: ${it.size}")
+                restoreContacts(it) 
+            } ?: 0
+            
+            Timber.i("[Mobile] INFO [Restore] 恢复完成; 恢复短信: $restoredSmsCount/${backupData.messages?.size ?: 0}, 恢复通话记录: $restoredCallLogsCount/${backupData.callLogs?.size ?: 0}, 恢复联系人: $restoredContactsCount/${backupData.contacts?.size ?: 0}")
+            
+            return@withContext RestoreResult(
+                success = true,
+                message = "成功恢复 $restoredSmsCount 条短信、$restoredCallLogsCount 条通话记录和 $restoredContactsCount 位联系人"
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Restore] 恢复数据失败: ${e.message}")
+            return@withContext RestoreResult(false, "恢复失败: ${e.message}")
+        }
+    }
+    
+    /**
+     * 恢复短信
+     * 
+     * @param messages 短信列表
+     * @return 成功恢复的短信数量
+     */
+    private suspend fun restoreMessages(messages: List<Message>): Int = withContext(Dispatchers.IO) {
+        var restoredCount = 0
+        Timber.i("[Mobile] INFO [Restore] 开始恢复短信，总数: ${messages.size}")
+        
+        messages.forEach { message ->
+            try {
+                val values = ContentValues().apply {
+                    put(Telephony.Sms.ADDRESS, message.address)
+                    put(Telephony.Sms.BODY, message.body)
+                    put(Telephony.Sms.DATE, message.date)
+                    put(Telephony.Sms.DATE_SENT, message.date)
+                    put(Telephony.Sms.READ, message.readState ?: 0)
+                    put(Telephony.Sms.TYPE, message.type)
+                    put(Telephony.Sms.STATUS, message.messageStatus ?: 0)
+                }
+                
+                Timber.d("[Mobile] DEBUG [Restore] 尝试恢复短信: 地址=${message.address}, 类型=${message.type}, 日期=${message.date}")
+                
+                // 使用正确的短信URI
+                val uri = contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+                if (uri != null) {
+                    restoredCount++
+                    Timber.d("[Mobile] DEBUG [Restore] 成功恢复短信: $uri")
+                } else {
+                    Timber.e("[Mobile] ERROR [Restore] 恢复短信失败: 插入返回null")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 恢复短信失败: ID=${message.id}, 地址=${message.address}, ${e.message}")
+            }
+        }
+        
+        Timber.i("[Mobile] INFO [Restore] 短信恢复完成: 成功=$restoredCount, 总数=${messages.size}")
+        return@withContext restoredCount
+    }
+    
+    /**
+     * 恢复通话记录
+     * 
+     * @param callLogs 通话记录列表
+     * @return 成功恢复的通话记录数量
+     */
+    private suspend fun restoreCallLogs(callLogs: List<ModelCallLog>): Int = withContext(Dispatchers.IO) {
+        var restoredCount = 0
+        Timber.i("[Mobile] INFO [Restore] 开始恢复通话记录，总数: ${callLogs.size}")
+        
+        callLogs.forEach { callLog ->
+            try {
+                val values = ContentValues().apply {
+                    put(CallLog.Calls.NUMBER, callLog.number)
+                    put(CallLog.Calls.TYPE, callLog.type)
+                    put(CallLog.Calls.DATE, callLog.date)
+                    put(CallLog.Calls.DURATION, callLog.duration)
+                    callLog.contact?.let { contactName ->
+                        put(CallLog.Calls.CACHED_NAME, contactName)
+                    }
+                }
+                
+                Timber.d("[Mobile] DEBUG [Restore] 尝试恢复通话记录: 号码=${callLog.number}, 类型=${callLog.type}, 日期=${callLog.date}")
+                
+                val uri = contentResolver.insert(CallLog.Calls.CONTENT_URI, values)
+                if (uri != null) {
+                    restoredCount++
+                    Timber.d("[Mobile] DEBUG [Restore] 成功恢复通话记录: $uri")
+                } else {
+                    Timber.e("[Mobile] ERROR [Restore] 恢复通话记录失败: 插入返回null")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 恢复通话记录失败: ID=${callLog.id}, 号码=${callLog.number}, ${e.message}")
+            }
+        }
+        
+        Timber.i("[Mobile] INFO [Restore] 通话记录恢复完成: 成功=$restoredCount, 总数=${callLogs.size}")
+        return@withContext restoredCount
+    }
+    
+    /**
+     * 恢复联系人
+     * 
+     * @param contacts 联系人列表
+     * @return 成功恢复的联系人数量
+     */
+    private suspend fun restoreContacts(contacts: List<Contact>): Int = withContext(Dispatchers.IO) {
+        var restoredCount = 0
+        Timber.i("[Mobile] INFO [Restore] 开始恢复联系人，总数: ${contacts.size}")
+        
+        contacts.forEach { contact ->
+            try {
+                val operations = ArrayList<ContentProviderOperation>()
+                
+                // 创建联系人
+                val rawContactInsertIndex = operations.size
+                operations.add(ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, null)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, null)
+                    .build())
+                
+                // 添加姓名
+                operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                    .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, rawContactInsertIndex)
+                    .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE)
+                    .withValue(ContactsContract.CommonDataKinds.StructuredName.DISPLAY_NAME, contact.name)
+                    .build())
+                
+                // 添加电话号码
+                contact.phoneNumbers.forEach { phoneNumber ->
+                    operations.add(ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                        .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, rawContactInsertIndex)
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE)
+                        .withValue(ContactsContract.CommonDataKinds.Phone.NUMBER, phoneNumber)
+                        .withValue(ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE)
+                        .build())
+                }
+                
+                Timber.d("[Mobile] DEBUG [Restore] 尝试恢复联系人: 姓名=${contact.name}, 电话数量=${contact.phoneNumbers.size}")
+                
+                try {
+                    val results = contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
+                    if (results.isNotEmpty()) {
+                        restoredCount++
+                        Timber.d("[Mobile] DEBUG [Restore] 成功恢复联系人: ${results.first()}")
+                    } else {
+                        Timber.e("[Mobile] ERROR [Restore] 恢复联系人失败: 批处理返回空结果")
+                    }
+                } catch (e: OperationApplicationException) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 批处理操作异常")
+                } catch (e: RemoteException) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 远程操作异常")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: ID=${contact.id}, 姓名=${contact.name}, ${e.message}")
+            }
+        }
+        
+        Timber.i("[Mobile] INFO [Restore] 联系人恢复完成: 成功=$restoredCount, 总数=${contacts.size}")
+        return@withContext restoredCount
+    }
+    
+    /**
+     * 验证备份文件
+     * 
+     * @param file 备份文件
+     * @return 如果备份文件有效则返回true，否则返回false
+     */
+    private fun validateBackupFile(file: File): Boolean {
+        if (!file.exists() || !file.isFile || !file.canRead()) {
+            return false
+        }
+        
+        try {
+            FileReader(file).use { reader ->
+                val typeToken = object : TypeToken<BackupData>() {}.type
+                val backupData = gson.fromJson<BackupData>(reader, typeToken)
+                // 如果BackupData类中没有formatVersion字段，则始终返回true
+                return backupData != null
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Restore] 验证备份文件失败: ${file.name}, ${e.message}")
+            return false
+        }
+    }
+    
+    /**
+     * 处理备份文件
+     * 
+     * @param backupFile 备份文件
+     */
+    private fun someRestoreMethod(backupFile: BackupFile) {
+        println("处理备份文件: ${backupFile.fileName}")
+    }
+    
+    /**
+     * 读取状态的方法
+     * 
+     * @return 读取状态
+     */
+    private fun readState(): Any {
+        return Any() // 临时返回
+    }
+    
+    /**
+     * 消息状态字段
+     */
+    private val messageStatus: Any = Any()
+    
+    /**
+     * 读取状态枚举
+     */
+    private enum class ReadState {
+        READ, UNREAD
+    }
+    
+    /**
+     * 消息状态枚举
+     */
+    private enum class MessageStatus {
+        RECEIVED, SENT
+    }
+    
+    /**
+     * 获取读取状态
+     * 
+     * @param value 值
+     * @return 读取状态
+     */
+    private fun getReadState(value: Int): ReadState {
+        return if (value == 1) ReadState.READ else ReadState.UNREAD
+    }
+    
+    /**
+     * 获取消息状态
+     * 
+     * @param value 值
+     * @return 消息状态
+     */
+    private fun getMessageStatus(value: Int): MessageStatus {
+        return if (value == 1) MessageStatus.RECEIVED else MessageStatus.SENT
+    }
+    
+    /**
+     * 记录错误日志
+     * 
+     * @param message 消息
+     */
+    private fun logError(message: String) {
+        Log.e(TAG, message)
+    }
+    
+    /**
+     * 将消息模型转换为实体
+     * 
+     * @param message 消息
+     * @return 消息实体
+     */
+    private fun Message.toMessageEntity(): MessageEntity {
+        return MessageEntity(
+            id = this.id,
+            address = this.address,
+            body = this.body ?: "",
+            date = this.date,
+            type = this.type,
+            read = 0, // 默认值，因为Message类可能没有readState字段
+            status = 0, // 默认值，因为Message类可能没有messageStatus字段
+            threadId = 0  // 默认值，因为Message类可能没有threadId字段
+        )
+    }
+    
+    /**
+     * 将通话记录模型转换为实体
+     * 
+     * @param callLog 通话记录
+     * @return 通话记录实体
+     */
+    private fun ModelCallLog.toCallLogEntity(): CallLogsEntity {
+        return CallLogsEntity(
+            id = this.id,
+            number = this.number,
+            name = this.contact ?: "",
+            date = this.date,
+            duration = this.duration,
+            type = this.type
+        )
+    }
+    
+    /**
+     * 将消息数据模型转换为实体
+     * 
+     * @param messageData 消息数据
+     * @return 消息实体
+     */
+    private fun MessageData.toMessageEntity(): MessageEntity {
+        return MessageEntity(
+            id = this.id,
+            address = this.address,
+            body = this.body ?: "",
+            date = this.date,
+            type = this.type,
+            read = this.readState,
+            status = this.messageStatus,
+            threadId = this.threadId ?: 0
+        )
+    }
+    
+    /**
+     * 修复 line 242 和 243 的 ContentValues.put 歧义
+     */
+    private fun createMessageContentValues(message: Message): ContentValues {
+        val values = ContentValues()
+        values.put("column_name", message.address) // 不再使用as String显式指定类型
+        values.put("another_column", message.body) // 不再使用as String显式指定类型
+        return values
+    }
+    
+    /**
+     * 获取协议类型
+     */
+    private fun getProtocolFromType(type: Int): String {
+        return when(type) {
+            1 -> "sms"
+            2 -> "mms"
+            else -> "unknown"
+        }
+    }
+    
+    /**
+     * 修复缺少参数的方法调用
+     */
+    private fun someMethod() {
+        // 删除无效的方法调用代码
+    }
+    
+    /**
+     * 定义TAG常量
+     */
+    companion object {
+        private const val BACKUP_FORMAT_VERSION = SUPPORTED_VERSION
+    }
+    
+    /**
+     * 恢复结果数据类
+     */
+    data class RestoreResult(
+        val success: Boolean,
+        val message: String
+    )
+}
+

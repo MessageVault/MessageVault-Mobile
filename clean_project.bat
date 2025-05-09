@@ -1,0 +1,16 @@
+@echo off
+echo 清理项目...
+call gradlew clean
+echo 删除构建目录...
+rmdir /s /q app\build
+rmdir /s /q build
+rmdir /s /q .gradle
+echo 删除Kapt生成的目录...
+rmdir /s /q app\build\generated\source\kapt
+echo 清理Gradle守护进程缓存...
+call gradlew --stop
+echo 删除Gradle缓存...
+set GRADLE_USER_HOME=%USERPROFILE%\.gradle
+if exist "%GRADLE_USER_HOME%\caches" rmdir /s /q "%GRADLE_USER_HOME%\caches"
+echo 完成! 现在可以尝试重新构建项目。
+pause

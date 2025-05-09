@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_description">Backup and restore your SMS and call logs</string>
+    <string name="app_name">MessageVault</string>
+    <string name="app_title">MessageVault</string>
+    <string name="backup_button">Backup Data</string>
+    <string name="backup_failed">Backup failed</string>
+    <string name="backup_success">Backup successful</string>
+    <string name="backup_tab">Backup</string>
+    <string name="more_tab">More</string>
+    <string name="permission_prompt">MessageVault needs access to SMS and call log permissions to work properly. Please grant these permissions in settings.</string>
+    <string name="permission_required">Permissions Required</string>
+    <string name="preview_tab">Preview</string>
+    <string name="restore_button">Restore Data</string>
+    <string name="restore_failed">Restore failed</string>
+    <string name="restore_success">Restore successful</string>
+    <string name="restore_tab">Restore</string>
+    <string name="settings">Settings</string>
+    <string name="status_initial">Ready to backup</string>
+    <string name="welcome_message">Welcome to MessageVault</string>
+</resources>

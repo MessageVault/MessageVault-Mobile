@@ -1,0 +1,26 @@
+<lint-module
+    format="1"
+    dir="D:\MyOpenDev\MessageVault\MessageVault-Mobile\app"
+    name=":app"
+    type="APP"
+    maven="MessageVault-Mobile:app:"
+    agpVersion="8.1.4"
+    buildFolder="build"
+    bootClassPath="D:\Android\Sdk\platforms\android-34\android.jar;D:\Android\Sdk\build-tools\33.0.2\core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-34"
+    neverShrinking="true">
+  <lintOptions
+      disable="ManifestPackageNameNeeded"
+      abortOnError="true"
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true">
+    <severities>
+      <severity
+        id="ManifestPackageNameNeeded"
+        severity="IGNORE" />
+    </severities>
+  </lintOptions>
+  <variant name="release"/>
+</lint-module>
