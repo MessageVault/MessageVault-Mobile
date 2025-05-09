@@ -14,6 +14,11 @@
   - 添加完整的Material 3颜色系统实现
   - 优化深色/浅色主题支持
   - 添加Material 3 window-size-class支持
+- 完善短信和通话记录备份恢复功能
+  - 通过SharedPreferences实现组件间状态同步
+  - 使用RoleManager优化Android 10+默认短信应用检测
+  - 提供详细的恢复进度跟踪和UI更新
+  - 添加备份文件预检查和内容分析
 
 ### 修改
 - 更新app/build.gradle中的Compose编译器配置
@@ -44,6 +49,11 @@
 - 修复JDK兼容性问题
   - 设置使用标准OpenJDK 17而非GraalVM
   - 更新gradle.properties中的JDK路径设置
+- 修复高版本Android上的默认短信应用检测问题
+  - 处理getDefaultSmsPackage返回null的情况
+  - 添加RoleManager作为主要检测方法(Android 10+)
+  - 使用SharedPreferences同步状态
+  - 添加详细日志以便调试问题
 
 ## [0.1.4] - 2025-04-17
 
