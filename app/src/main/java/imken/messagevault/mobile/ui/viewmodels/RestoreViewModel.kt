@@ -67,6 +67,9 @@ class RestoreViewModel(
     // 是否需要设置为默认短信应用
     val needDefaultSmsApp = mutableStateOf(false)
     
+    // 强制覆盖默认短信应用状态的标记，用于处理系统返回不一致的情况
+    private var forceDefaultSmsAppStatus: Boolean? = null
+    
     // 恢复的阶段说明
     val restorePhase = mutableStateOf<String?>(null)
     
@@ -79,6 +82,21 @@ class RestoreViewModel(
      */
     init {
         loadBackupFiles()
+    }
+    
+    /**
+     * 直接通知默认短信应用状态变化
+     * 用于从MainActivity强制更新状态
+     */
+    fun notifyDefaultSmsAppChanged(isDefault: Boolean) {
+        forceDefaultSmsAppStatus = isDefault
+        Timber.i("[Mobile] INFO [Restore] 强制更新默认短信应用状态: isDefault=$isDefault")
+        
+        // 如果已设为默认应用但仍显示需要权限，自动重置状态
+        if (isDefault && needDefaultSmsApp.value) {
+            needDefaultSmsApp.value = false
+            Timber.i("[Mobile] INFO [Restore] 自动重置权限检查对话框，当前被强制设为默认短信应用")
+        }
     }
     
     /**
@@ -254,6 +272,13 @@ class RestoreViewModel(
      * 检查应用是否为默认短信应用
      */
     private fun isDefaultSmsApp(): Boolean {
+        // 如果有强制设置的状态，优先使用
+        if (forceDefaultSmsAppStatus != null) {
+            val forcedStatus = forceDefaultSmsAppStatus!!
+            Timber.d("[Mobile] DEBUG [Restore] 使用强制设置的默认短信应用状态: $forcedStatus")
+            return forcedStatus
+        }
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
             val isDefault = context.packageName == defaultSmsPackage
@@ -286,6 +311,26 @@ class RestoreViewModel(
         // 强制检查一次当前是否为默认短信应用
         val isDefault = isDefaultSmsApp()
         Timber.i("[Mobile] INFO [Restore] 重置权限检查对话框，当前是否为默认短信应用: $isDefault")
+    }
+    
+    /**
+     * 检查并更新默认短信应用状态
+     * 返回当前是否为默认短信应用
+     */
+    fun checkAndUpdateDefaultSmsAppStatus(): Boolean {
+        // 清除任何之前强制设置的状态，确保从系统获取最新状态
+        forceDefaultSmsAppStatus = null
+        
+        // 直接从系统检查一次
+        val isDefault = isDefaultSmsApp()
+        
+        // 如果是默认应用，记录并更新强制状态
+        if (isDefault) {
+            forceDefaultSmsAppStatus = true
+            Timber.i("[Mobile] INFO [Restore] 检测到应用已是默认短信应用，更新状态")
+        }
+        
+        return isDefault
     }
     
     /**

@@ -836,6 +836,20 @@ class RestoreManager(
             // 添加详细日志
             Timber.d("[Mobile] DEBUG [Restore] 默认短信应用检查 - 当前应用: ${context.packageName}, 系统默认: $defaultSmsPackage, 是默认: $isDefault")
             
+            // 检查高版本Android上是否有特殊情况
+            if (!isDefault && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // 在Android 12+上可能有额外的默认应用检查逻辑
+                try {
+                    val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager
+                    if (roleManager != null && roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_SMS)) {
+                        Timber.i("[Mobile] INFO [Restore] RoleManager报告应用持有SMS角色，覆盖默认检查结果")
+                        return true
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "[Mobile] ERROR [Restore] 检查RoleManager时出错")
+                }
+            }
+            
             return isDefault
         }
         return true // 在较旧版本中不需要是默认短信应用

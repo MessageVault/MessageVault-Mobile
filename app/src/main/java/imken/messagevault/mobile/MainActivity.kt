@@ -390,12 +390,16 @@ class MainActivity : ComponentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         
         if (requestCode == DEFAULT_SMS_REQUEST_CODE) {
-            if (isDefaultSmsApp()) {
+            val isSmsAppNow = isDefaultSmsApp()
+            if (isSmsAppNow) {
                 Timber.i("[Mobile] INFO [Permission] 成功设置为默认短信应用; Context: 用户同意")
                 
                 // 获取当前屏幕上的RestoreViewModel，执行恢复操作
                 val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
                     .get(RestoreViewModel::class.java)
+                
+                // 强制更新RestoreViewModel的默认短信应用状态
+                restoreViewModel.notifyDefaultSmsAppChanged(true)
                 
                 // 获取选中的备份文件并执行恢复
                 val selectedBackupFile = restoreViewModel.selectedBackupFile.value

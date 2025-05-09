@@ -27,6 +27,7 @@ import imken.messagevault.mobile.MainActivity
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.flow.StateFlow
+import timber.log.Timber
 
 /**
  * 恢复屏幕
@@ -70,9 +71,20 @@ fun RestoreScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.resetNeedDefaultSmsApp()
-                        if (context is MainActivity) {
-                            context.requestDefaultSmsApp()
+                        // 先检查一次是否已经是默认应用，可能系统已授权但UI状态未更新
+                        val isDefault = viewModel.checkAndUpdateDefaultSmsAppStatus()
+                        
+                        if (isDefault) {
+                            // 如果已经是默认应用，直接关闭对话框并开始恢复
+                            Timber.i("[Mobile] INFO [Restore] 应用已是默认短信应用，无需再请求权限")
+                            viewModel.resetNeedDefaultSmsApp()
+                            selectedBackupFile?.let { onRestoreClick(it) }
+                        } else {
+                            // 否则请求成为默认应用
+                            viewModel.resetNeedDefaultSmsApp()
+                            if (context is MainActivity) {
+                                context.requestDefaultSmsApp()
+                            }
                         }
                     }
                 ) {
@@ -142,15 +154,74 @@ fun RestoreScreen(
             }
         }
         
-        // 正在加载指示器
+        // 获取恢复状态和进度
+        val restoreState by viewModel.restoreState.collectAsState()
+        val restoreProgress by viewModel.restoreProgress.collectAsState()
+        val restorePhase = viewModel.restorePhase.value
+        
+        // 恢复进度指示器
         if (isOperating) {
-            CircularProgressIndicator(
+            // 显示包含阶段信息的进度指示器
+            Column(
                 modifier = Modifier
-                    .size(48.dp)
-                    .padding(8.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.primaryContainer
-            )
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 循环进度条
+                if (restoreProgress <= 0) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .padding(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                } else {
+                    // 确定性进度条
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp, vertical = 8.dp)
+                    ) {
+                        // 进度条
+                        LinearProgressIndicator(
+                            progress = restoreProgress / 100f,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    }
+                    
+                    // 进度文本
+                    Text(
+                        text = "$restoreProgress%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                
+                // 阶段描述
+                if (restorePhase != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp, vertical = 8.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = restorePhase,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(8.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
         }
         
         // 备份文件列表
