@@ -36,6 +36,9 @@ import android.content.OperationApplicationException
 import android.net.Uri
 import android.os.RemoteException
 import java.util.concurrent.atomic.AtomicInteger
+import android.content.Intent
+import android.os.Build
+import android.app.Activity
 
 /**
  * 恢复管理器
@@ -62,8 +65,8 @@ class RestoreManager(
      * 
      * @return 备份文件列表
      */
-    suspend fun getAvailableBackups(): List<BackupFile> = withContext(Dispatchers.IO) {
-        val backupFiles = mutableListOf<BackupFile>()
+    suspend fun getAvailableBackups(): List<imken.messagevault.mobile.models.BackupFile> = withContext(Dispatchers.IO) {
+        val backupFiles = mutableListOf<imken.messagevault.mobile.models.BackupFile>()
         
         try {
             // 使用config获取备份目录名称而不是硬编码字符串
@@ -72,7 +75,7 @@ class RestoreManager(
             // 检查备份目录是否存在
             if (!backupDir.exists()) {
                 Timber.w("[Mobile] WARN [Restore] 备份目录不存在: ${backupDir.absolutePath}")
-                return@withContext emptyList<BackupFile>()
+                return@withContext emptyList<imken.messagevault.mobile.models.BackupFile>()
             }
             
             // 获取备份目录中的所有JSON文件
@@ -83,20 +86,36 @@ class RestoreManager(
             if (files != null) {
                 // 过滤无效的备份文件
                 val validFiles = files.filter { validateBackupFile(it) }
-                backupFiles.addAll(validFiles.map { 
-                    BackupFile(
-                        id = UUID.randomUUID().toString(),
-                        deviceId = Settings.Secure.getString(
-                            context.contentResolver, 
-                            Settings.Secure.ANDROID_ID
-                        ) ?: "unknown",
-                        fileName = it.name,
-                        timestamp = it.lastModified(),
-                        appVersion = BuildConfig.VERSION_NAME,
-                        size = it.length(),
-                        localFile = it
+                backupFiles.addAll(validFiles.map { file -> 
+                    val deviceId = Settings.Secure.getString(
+                        context.contentResolver, 
+                        Settings.Secure.ANDROID_ID
+                    ) ?: "unknown"
+                    
+                    // 解析备份文件以获取SMS和通话记录数量
+                    val fileReader = FileReader(file)
+                    val backupData = try {
+                        gson.fromJson(fileReader, BackupData::class.java)
+                    } catch (e: Exception) {
+                        null
+                    } finally {
+                        fileReader.close()
+                    }
+                    
+                    val smsCount = backupData?.messages?.size ?: 0
+                    val callLogsCount = backupData?.callLogs?.size ?: 0
+                    
+                    imken.messagevault.mobile.models.BackupFile(
+                        filePath = file.absolutePath,
+                        fileName = file.name,
+                        fileSize = file.length(),
+                        creationDate = Date(file.lastModified()),
+                        deviceName = deviceId,
+                        smsCount = smsCount,
+                        callLogsCount = callLogsCount,
+                        version = BuildConfig.VERSION_NAME
                     )
-                }.sortedByDescending { it.timestamp })
+                }.sortedByDescending { it.creationDate.time })
                 Timber.i("[Mobile] INFO [Restore] 找到 ${validFiles.size} 个有效备份文件，总共 ${files.size} 个文件")
             } else {
                 Timber.w("[Mobile] WARN [Restore] 无法列出备份目录中的文件: ${backupDir.absolutePath}")
@@ -114,9 +133,9 @@ class RestoreManager(
      * @param backupFile 备份文件
      * @return 备份数据对象，如果解析失败则返回null
      */
-    suspend fun parseBackupFile(backupFile: BackupFile): BackupData? = withContext(Dispatchers.IO) {
+    suspend fun parseBackupFile(backupFile: imken.messagevault.mobile.models.BackupFile): BackupData? = withContext(Dispatchers.IO) {
         try {
-            val file = backupFile.localFile ?: throw IllegalArgumentException("备份文件为空")
+            val file = File(backupFile.filePath)
             FileReader(file).use { reader ->
                 val typeToken = object : TypeToken<BackupData>() {}.type
                 val backupData = gson.fromJson<BackupData>(reader, typeToken)
@@ -145,12 +164,24 @@ class RestoreManager(
      * @param backupFile 备份文件
      * @return 恢复结果
      */
-    suspend fun restoreFromFile(backupFile: BackupFile): RestoreResult = withContext(Dispatchers.IO) {
+    suspend fun restoreFromFile(backupFile: imken.messagevault.mobile.models.BackupFile): RestoreResult = withContext(Dispatchers.IO) {
         try {
             // 添加基础日志
             Timber.d("[Mobile] DEBUG [Restore] 开始恢复文件: ${backupFile.fileName}")
             
             val backupData = parseBackupFile(backupFile) ?: return@withContext RestoreResult(false, "无法解析备份文件")
+            
+            // 检查是否需要恢复短信
+            val hasSms = !backupData.messages.isNullOrEmpty()
+            
+            // 如果有短信需要恢复，检查是否为默认短信应用
+            if (hasSms && !isDefaultSmsApp()) {
+                Timber.w("[Mobile] WARN [Restore] 当前应用不是默认短信应用，无法写入短信数据库")
+                return@withContext RestoreResult(
+                    success = false,
+                    message = "恢复短信需要将此应用设为默认短信应用，请在系统设置中更改"
+                )
+            }
             
             // 恢复短信
             val restoredSmsCount = backupData.messages?.let { 
@@ -192,6 +223,12 @@ class RestoreManager(
         var restoredCount = 0
         Timber.i("[Mobile] INFO [Restore] 开始恢复短信，总数: ${messages.size}")
         
+        // 检查权限
+        if (!hasSmsPermissions()) {
+            Timber.e("[Mobile] ERROR [Restore] 没有短信权限，无法恢复短信")
+            return@withContext 0
+        }
+        
         messages.forEach { message ->
             try {
                 val values = ContentValues().apply {
@@ -200,19 +237,35 @@ class RestoreManager(
                     put(Telephony.Sms.DATE, message.date)
                     put(Telephony.Sms.DATE_SENT, message.date)
                     put(Telephony.Sms.READ, message.readState ?: 0)
+                    // 注意: 短信类型是硬编码的，我们需要根据短信类型选择正确的URI
                     put(Telephony.Sms.TYPE, message.type)
                     put(Telephony.Sms.STATUS, message.messageStatus ?: 0)
                 }
                 
                 Timber.d("[Mobile] DEBUG [Restore] 尝试恢复短信: 地址=${message.address}, 类型=${message.type}, 日期=${message.date}")
                 
-                // 使用正确的短信URI
-                val uri = contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+                // 根据短信类型选择正确的URI
+                val uri = when (message.type) {
+                    Telephony.Sms.MESSAGE_TYPE_INBOX -> contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+                    Telephony.Sms.MESSAGE_TYPE_SENT -> contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
+                    Telephony.Sms.MESSAGE_TYPE_OUTBOX -> contentResolver.insert(Telephony.Sms.Outbox.CONTENT_URI, values)
+                    Telephony.Sms.MESSAGE_TYPE_DRAFT -> contentResolver.insert(Telephony.Sms.Draft.CONTENT_URI, values)
+                    else -> contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+                }
+                
                 if (uri != null) {
                     restoredCount++
                     Timber.d("[Mobile] DEBUG [Restore] 成功恢复短信: $uri")
                 } else {
-                    Timber.e("[Mobile] ERROR [Restore] 恢复短信失败: 插入返回null")
+                    // 尝试使用通用URI
+                    Timber.w("[Mobile] WARN [Restore] 使用特定URI恢复短信失败，尝试使用通用URI...")
+                    val fallbackUri = contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+                    if (fallbackUri != null) {
+                        restoredCount++
+                        Timber.d("[Mobile] DEBUG [Restore] 使用通用URI成功恢复短信: $fallbackUri")
+                    } else {
+                        Timber.e("[Mobile] ERROR [Restore] 恢复短信彻底失败: 插入返回null")
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "[Mobile] ERROR [Restore] 恢复短信失败: ID=${message.id}, 地址=${message.address}, ${e.message}")
@@ -221,6 +274,26 @@ class RestoreManager(
         
         Timber.i("[Mobile] INFO [Restore] 短信恢复完成: 成功=$restoredCount, 总数=${messages.size}")
         return@withContext restoredCount
+    }
+    
+    /**
+     * 检查是否有短信权限
+     */
+    private fun hasSmsPermissions(): Boolean {
+        val readPermission = android.Manifest.permission.READ_SMS
+        val sendPermission = android.Manifest.permission.SEND_SMS
+        val receivePermission = android.Manifest.permission.RECEIVE_SMS
+        
+        val readGranted = context.checkSelfPermission(readPermission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val sendGranted = context.checkSelfPermission(sendPermission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val receiveGranted = context.checkSelfPermission(receivePermission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        
+        if (!readGranted || !sendGranted) {
+            Timber.e("[Mobile] ERROR [Restore] 缺少短信权限: READ_SMS=$readGranted, SEND_SMS=$sendGranted, RECEIVE_SMS=$receiveGranted")
+            return false
+        }
+        
+        return true
     }
     
     /**
@@ -273,6 +346,12 @@ class RestoreManager(
         var restoredCount = 0
         Timber.i("[Mobile] INFO [Restore] 开始恢复联系人，总数: ${contacts.size}")
         
+        // 检查权限
+        if (!hasContactsPermissions()) {
+            Timber.e("[Mobile] ERROR [Restore] 没有联系人权限，无法恢复联系人")
+            return@withContext 0
+        }
+        
         contacts.forEach { contact ->
             try {
                 val operations = ArrayList<ContentProviderOperation>()
@@ -304,17 +383,18 @@ class RestoreManager(
                 Timber.d("[Mobile] DEBUG [Restore] 尝试恢复联系人: 姓名=${contact.name}, 电话数量=${contact.phoneNumbers.size}")
                 
                 try {
+                    // 应用批处理操作
                     val results = contentResolver.applyBatch(ContactsContract.AUTHORITY, operations)
                     if (results.isNotEmpty()) {
                         restoredCount++
-                        Timber.d("[Mobile] DEBUG [Restore] 成功恢复联系人: ${results.first()}")
+                        Timber.d("[Mobile] DEBUG [Restore] 成功恢复联系人: ${contact.name}, URI=${results.first()}")
                     } else {
                         Timber.e("[Mobile] ERROR [Restore] 恢复联系人失败: 批处理返回空结果")
                     }
                 } catch (e: OperationApplicationException) {
-                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 批处理操作异常")
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 批处理操作异常: ${e.message}")
                 } catch (e: RemoteException) {
-                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 远程操作异常")
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: 远程操作异常: ${e.message}")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "[Mobile] ERROR [Restore] 恢复联系人失败: ID=${contact.id}, 姓名=${contact.name}, ${e.message}")
@@ -323,6 +403,24 @@ class RestoreManager(
         
         Timber.i("[Mobile] INFO [Restore] 联系人恢复完成: 成功=$restoredCount, 总数=${contacts.size}")
         return@withContext restoredCount
+    }
+    
+    /**
+     * 检查是否有联系人权限
+     */
+    private fun hasContactsPermissions(): Boolean {
+        val readPermission = android.Manifest.permission.READ_CONTACTS
+        val writePermission = android.Manifest.permission.WRITE_CONTACTS
+        
+        val readGranted = context.checkSelfPermission(readPermission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val writeGranted = context.checkSelfPermission(writePermission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        
+        if (!readGranted || !writeGranted) {
+            Timber.e("[Mobile] ERROR [Restore] 缺少联系人权限: READ_CONTACTS=$readGranted, WRITE_CONTACTS=$writeGranted")
+            return false
+        }
+        
+        return true
     }
     
     /**
@@ -354,7 +452,7 @@ class RestoreManager(
      * 
      * @param backupFile 备份文件
      */
-    private fun someRestoreMethod(backupFile: BackupFile) {
+    private fun someRestoreMethod(backupFile: imken.messagevault.mobile.models.BackupFile) {
         println("处理备份文件: ${backupFile.fileName}")
     }
     
@@ -503,6 +601,7 @@ class RestoreManager(
      */
     companion object {
         private const val BACKUP_FORMAT_VERSION = SUPPORTED_VERSION
+        const val DEFAULT_SMS_REQUEST_CODE = 1001
     }
     
     /**
@@ -512,5 +611,33 @@ class RestoreManager(
         val success: Boolean,
         val message: String
     )
+    
+    /**
+     * 检查当前应用是否为默认短信应用
+     */
+    private fun isDefaultSmsApp(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
+            val isDefault = defaultSmsPackage == context.packageName
+            
+            if (!isDefault) {
+                Timber.d("[Mobile] DEBUG [Restore] 当前应用不是默认短信应用，默认应用为: $defaultSmsPackage")
+            }
+            
+            return isDefault
+        }
+        return true // 在较旧版本中不需要是默认短信应用
+    }
+    
+    /**
+     * 请求设置为默认短信应用
+     */
+    fun requestDefaultSmsApp(activity: Activity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, activity.packageName)
+            activity.startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
+        }
+    }
 }
 
