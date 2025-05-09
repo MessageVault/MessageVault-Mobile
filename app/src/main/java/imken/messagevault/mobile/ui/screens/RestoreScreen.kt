@@ -21,8 +21,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import imken.messagevault.mobile.R
-import imken.messagevault.mobile.data.models.BackupFile
+import imken.messagevault.mobile.models.BackupFile
 import imken.messagevault.mobile.ui.viewmodels.RestoreViewModel
+import imken.messagevault.mobile.MainActivity
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,42 @@ fun RestoreScreen(
     selectedBackupFile: BackupFile? = null,
     viewModel: RestoreViewModel
 ) {
+    val context = LocalContext.current
+    
+    // 显示需要默认短信应用对话框
+    if (viewModel.needDefaultSmsApp.value) {
+        AlertDialog(
+            onDismissRequest = { viewModel.resetNeedDefaultSmsApp() },
+            title = { Text(stringResource(R.string.permission_required)) },
+            text = { 
+                Text(
+                    "恢复短信需要临时将此应用设置为默认短信应用。\n\n" +
+                    "恢复完成后，您可以将其改回原来的应用。\n\n" +
+                    "在接下来的系统界面中选择\"是\"，将信驿云储设为默认短信应用，以开始恢复任务。"
+                ) 
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.resetNeedDefaultSmsApp()
+                        if (context is MainActivity) {
+                            context.requestDefaultSmsApp()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.settings))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.resetNeedDefaultSmsApp() }
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -188,7 +225,7 @@ fun BackupFileItem(
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     val formattedDate = remember(backupFile) { 
-        dateFormat.format(Date(backupFile.timestamp)) 
+        dateFormat.format(backupFile.creationDate) 
     }
     
     Card(
@@ -224,7 +261,7 @@ fun BackupFileItem(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = backupFile.deviceId,
+                        text = backupFile.deviceName,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -256,7 +293,7 @@ fun BackupFileItem(
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                 ) {
                     Text(
-                        text = stringResource(R.string.sms_count, 0),
+                        text = stringResource(R.string.sms_count, backupFile.smsCount),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -266,7 +303,7 @@ fun BackupFileItem(
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer
                 ) {
                     Text(
-                        text = stringResource(R.string.call_log_count, 0),
+                        text = stringResource(R.string.call_log_count, backupFile.callLogsCount),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -276,7 +313,7 @@ fun BackupFileItem(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ) {
                     Text(
-                        text = formatFileSize(backupFile.size),
+                        text = formatFileSize(backupFile.fileSize),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }

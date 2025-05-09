@@ -49,11 +49,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import imken.messagevault.mobile.model.BackupData
 import java.io.InputStream
-import imken.messagevault.mobile.data.models.BackupFile
+import imken.messagevault.mobile.models.BackupFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.util.Log
+import android.content.Intent
+import android.provider.Telephony
+import android.app.AlertDialog
+import android.widget.Toast
+import androidx.fragment.app.FragmentContainerView
+import androidx.lifecycle.ViewModelProvider
+import android.app.role.RoleManager
 
 /**
  * MessageVault主活动
@@ -76,6 +84,7 @@ class MainActivity : ComponentActivity() {
     
     companion object {
         private const val TAG = "MainActivity"
+        private const val DEFAULT_SMS_REQUEST_CODE = 1001
         private val REQUIRED_PERMISSIONS = arrayOf(
             // 读取权限
             Manifest.permission.READ_SMS,
@@ -136,7 +145,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        Timber.d("[Mobile] DEBUG [Lifecycle] MainActivity onCreate; Context: 应用启动")
+        // 初始化日志系统
+        if (Timber.forest().isEmpty()) {
+            Timber.plant(object : Timber.DebugTree() {
+                override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
+                    Log.println(priority, "MessageVault", message)
+                    super.log(priority, tag, message, t)
+                }
+            })
+        }
+        
+        // 输出测试日志以确认日志系统工作正常
+        Timber.d("[Mobile] DEBUG 日志系统初始化完成")
+        Log.d("MessageVault", "主活动创建 - 直接Log测试")
         
         // 初始化配置
         config = Config.getInstance(this)
@@ -267,6 +288,159 @@ class MainActivity : ComponentActivity() {
                            Settings.Secure.ANDROID_ID) ?: "unknown"
         
         // ...existing code...
+    }
+
+    /**
+     * 启动恢复流程
+     * 
+     * @param backupFile 要恢复的备份文件
+     */
+    private fun startRestoreProcess(backupFile: BackupFile) {
+        // 如果有短信需要恢复，检查是否需要设置为默认短信应用
+        // 注意：这里需要检查备份文件中是否包含短信数据
+        val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
+            .get(RestoreViewModel::class.java)
+        
+        // 直接使用RestoreViewModel恢复备份文件
+        restoreViewModel.restoreBackupFile(backupFile)
+    }
+    
+    /**
+     * 检查应用是否为默认短信应用
+     */
+    private fun isDefaultSmsApp(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)
+            return packageName == defaultSmsPackage
+        }
+        return true
+    }
+    
+    /**
+     * 显示设置默认短信应用对话框
+     */
+    private fun showDefaultSmsAppDialog() {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle(R.string.permission_required)
+            .setMessage("恢复短信需要临时将此应用设置为默认短信应用。\n\n恢复完成后，您可以将其改回原来的应用。\n\n在接下来的系统界面中选择\"是\"，将信驿云储设为默认短信应用，以开始恢复任务。")
+            .setPositiveButton(R.string.settings) { _, _ ->
+                requestDefaultSmsApp()
+            }
+            .setNegativeButton(R.string.cancel) { dialog, _ ->
+                dialog.dismiss()
+            }
+            .create()
+            .show()
+    }
+    
+    /**
+     * 请求设置为默认短信应用
+     */
+    fun requestDefaultSmsApp() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                // 使用RoleManager（Android 10及以上）
+                val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+                
+                // 检查应用是否可以请求短信角色
+                if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
+                    // 检查应用是否已经持有短信角色
+                    if (!roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
+                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                        startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
+                        
+                        Timber.i("[Mobile] INFO [Permission] 请求成为默认短信应用 (RoleManager); Context: 用户操作")
+                    } else {
+                        Timber.i("[Mobile] INFO [Permission] 应用已经是默认短信应用")
+                    }
+                } else {
+                    Timber.w("[Mobile] WARN [Permission] 此设备不支持请求SMS角色")
+                    // 回退到旧方法
+                    requestDefaultSmsAppLegacy()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Permission] 请求RoleManager失败: ${e.message}")
+                // 回退到旧方法
+                requestDefaultSmsAppLegacy()
+            }
+        } else {
+            // 使用旧API
+            requestDefaultSmsAppLegacy()
+        }
+    }
+    
+    /**
+     * 使用旧方法请求设置为默认短信应用（Android 4.4-9）
+     */
+    private fun requestDefaultSmsAppLegacy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+            startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
+            
+            Timber.d("[Mobile] DEBUG [Permission] 请求成为默认短信应用 (旧API); Context: 用户操作")
+        }
+    }
+    
+    /**
+     * 活动结果处理
+     */
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == DEFAULT_SMS_REQUEST_CODE) {
+            if (isDefaultSmsApp()) {
+                Timber.i("[Mobile] INFO [Permission] 成功设置为默认短信应用; Context: 用户同意")
+                
+                // 获取当前屏幕上的RestoreViewModel，执行恢复操作
+                val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
+                    .get(RestoreViewModel::class.java)
+                
+                // 获取选中的备份文件并执行恢复
+                val selectedBackupFile = restoreViewModel.selectedBackupFile.value
+                if (selectedBackupFile != null) {
+                    Timber.i("[Mobile] INFO [Restore] 开始恢复备份; Context: 已设置为默认短信应用")
+                    restoreViewModel.restoreBackupFile(selectedBackupFile)
+                    
+                    // 恢复完成后，提醒用户恢复默认短信应用
+                    showRestoreDefaultSmsAppDialog()
+                } else {
+                    Timber.w("[Mobile] WARN [Restore] 没有选中备份文件; Context: 已设置为默认短信应用但无备份可恢复")
+                    Toast.makeText(this, "没有选中备份文件，请先选择要恢复的备份", Toast.LENGTH_LONG).show()
+                }
+            } else {
+                Timber.w("[Mobile] WARN [Permission] 未能设置为默认短信应用; Context: 用户拒绝")
+                Toast.makeText(this, "需要设置为默认短信应用才能恢复短信", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    /**
+     * 显示恢复默认短信应用对话框
+     */
+    private fun showRestoreDefaultSmsAppDialog() {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("恢复默认短信应用")
+            .setMessage("短信恢复已完成。现在您可以将默认短信应用改回原来的应用。")
+            .setPositiveButton("设置") { _, _ ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // 使用RoleManager（Android 10及以上）
+                    val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                    startActivity(intent)
+                } else {
+                    // 使用旧API
+                    val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                    intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, "")
+                    startActivity(intent)
+                }
+            }
+            .setNegativeButton("稍后") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .create()
+            .show()
     }
 }
 
