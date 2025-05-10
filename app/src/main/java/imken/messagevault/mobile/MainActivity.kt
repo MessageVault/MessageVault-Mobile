@@ -361,6 +361,24 @@ class MainActivity : ComponentActivity() {
     
     /**
      * 请求设置为默认短信应用
+     * 
+     * 此方法用于向系统请求将应用设置为默认短信应用，是恢复短信功能的必要前提。
+     * 
+     * 实现策略:
+     * - 对于Android 10(Q)及以上版本，优先使用现代的RoleManager API
+     * - 对于Android 4.4-9版本，使用传统的Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT方法
+     * - 对于更低版本，不需要此权限(Android 4.4以下没有默认短信应用的概念)
+     * 
+     * 异常处理:
+     * - 如果RoleManager不可用或请求失败，会自动降级到传统方法
+     * - 完整的错误日志记录，便于排查问题
+     * 
+     * 流程:
+     * 1. 此方法启动系统的权限请求界面
+     * 2. 用户做出选择(同意或拒绝)
+     * 3. 系统结果返回到onActivityResult方法
+     * 4. 在onActivityResult中处理用户的选择结果
+     * 5. 如果用户同意，继续恢复流程；如果拒绝，提示用户并终止恢复
      */
     fun requestDefaultSmsApp() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -373,11 +391,14 @@ class MainActivity : ComponentActivity() {
                     // 检查应用是否已经持有短信角色
                     if (!roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
                         val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                        // 使用新的活动结果API
                         startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
                         
                         Timber.i("[Mobile] INFO [Permission] 请求成为默认短信应用 (RoleManager); Context: 用户操作")
                     } else {
                         Timber.i("[Mobile] INFO [Permission] 应用已经是默认短信应用")
+                        // 已经是默认短信应用，直接处理
+                        handleDefaultSmsAppGranted()
                     }
                 } else {
                     Timber.w("[Mobile] WARN [Permission] 此设备不支持请求SMS角色")
@@ -392,6 +413,33 @@ class MainActivity : ComponentActivity() {
         } else {
             // 使用旧API
             requestDefaultSmsAppLegacy()
+        }
+    }
+    
+    /**
+     * 处理已获得默认短信应用权限的情况
+     */
+    private fun handleDefaultSmsAppGranted() {
+        // 保存状态到SharedPreferences供其他组件使用
+        getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
+            .putBoolean("is_default_sms_app", true)
+            .apply()
+        
+        // 获取当前屏幕上的RestoreViewModel，执行恢复操作
+        val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
+            .get(RestoreViewModel::class.java)
+        
+        // 强制更新RestoreViewModel的默认短信应用状态
+        restoreViewModel.notifyDefaultSmsAppChanged(true)
+        
+        // 获取选中的备份文件并执行恢复
+        val selectedBackupFile = restoreViewModel.selectedBackupFile.value
+        if (selectedBackupFile != null) {
+            Timber.i("[Mobile] INFO [Restore] 开始恢复备份; Context: 已设置为默认短信应用")
+            restoreViewModel.restoreBackupFile(selectedBackupFile)
+        } else {
+            Timber.w("[Mobile] WARN [Restore] 没有选中备份文件; Context: 已设置为默认短信应用但无备份可恢复")
+            Toast.makeText(this, "没有选中备份文件，请先选择要恢复的备份", Toast.LENGTH_LONG).show()
         }
     }
     
@@ -420,30 +468,8 @@ class MainActivity : ComponentActivity() {
             if (isSmsAppNow) {
                 Timber.i("[Mobile] INFO [Permission] 成功设置为默认短信应用; Context: 用户同意")
                 
-                // 保存状态到SharedPreferences供其他组件使用
-                getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
-                    .putBoolean("is_default_sms_app", true)
-                    .apply()
-                
-                // 获取当前屏幕上的RestoreViewModel，执行恢复操作
-                val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
-                    .get(RestoreViewModel::class.java)
-                
-                // 强制更新RestoreViewModel的默认短信应用状态
-                restoreViewModel.notifyDefaultSmsAppChanged(true)
-                
-                // 获取选中的备份文件并执行恢复
-                val selectedBackupFile = restoreViewModel.selectedBackupFile.value
-                if (selectedBackupFile != null) {
-                    Timber.i("[Mobile] INFO [Restore] 开始恢复备份; Context: 已设置为默认短信应用")
-                    restoreViewModel.restoreBackupFile(selectedBackupFile)
-                    
-                    // 恢复完成后，提醒用户恢复默认短信应用
-                    showRestoreDefaultSmsAppDialog()
-                } else {
-                    Timber.w("[Mobile] WARN [Restore] 没有选中备份文件; Context: 已设置为默认短信应用但无备份可恢复")
-                    Toast.makeText(this, "没有选中备份文件，请先选择要恢复的备份", Toast.LENGTH_LONG).show()
-                }
+                // 处理已获得权限的情况
+                handleDefaultSmsAppGranted()
             } else {
                 // 如果设置失败，也要更新状态
                 getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
@@ -462,8 +488,8 @@ class MainActivity : ComponentActivity() {
     private fun showRestoreDefaultSmsAppDialog() {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("恢复默认短信应用")
-            .setMessage("短信恢复已完成。现在您可以将默认短信应用改回原来的应用。")
-            .setPositiveButton("设置") { _, _ ->
+            .setMessage("短信恢复已完成。现在您可以将默认短信应用改回原来的应用，也可以稍后再改回。\n\n如果您需要继续恢复其他备份，建议暂时保持本应用为默认短信应用。")
+            .setPositiveButton("现在改回") { _, _ ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // 使用RoleManager（Android 10及以上）
                     val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
@@ -476,7 +502,7 @@ class MainActivity : ComponentActivity() {
                     startActivity(intent)
                 }
             }
-            .setNegativeButton("稍后") { dialog, _ ->
+            .setNegativeButton("稍后改回") { dialog, _ ->
                 dialog.dismiss()
             }
             .create()

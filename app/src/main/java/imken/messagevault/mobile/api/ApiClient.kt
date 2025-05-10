@@ -11,6 +11,28 @@ import timber.log.Timber
  */
 class ApiClient(private val config: Config) {
     
+    companion object {
+        private var sInstance: ApiClient? = null
+        
+        /**
+         * 获取ApiClient实例
+         * 
+         * @param config 应用配置
+         * @return ApiClient实例
+         */
+        @JvmStatic
+        fun getInstance(config: Config): ApiClient {
+            if (sInstance == null) {
+                synchronized(ApiClient::class.java) {
+                    if (sInstance == null) {
+                        sInstance = ApiClient(config)
+                    }
+                }
+            }
+            return sInstance!!
+        }
+    }
+    
     /**
      * 获取远程备份文件列表
      * 

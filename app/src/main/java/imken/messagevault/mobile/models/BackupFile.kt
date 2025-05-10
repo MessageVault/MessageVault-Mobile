@@ -8,9 +8,12 @@ data class BackupFile(
     val fileSize: Long,
     val creationDate: Date,
     val deviceName: String,
-    val smsCount: Int,
-    val callLogsCount: Int,
-    val version: String,
+    val smsCount: Int = 0,
+    val callLogsCount: Int = 0,
+    val version: String = "",
     val timestamp: Long = creationDate.time,
-    val deviceId: String = deviceName
+    val deviceId: String = deviceName,
+    val lastModified: Long = timestamp,
+    val dateTimeStr: String = creationDate.toString(),
+    val deviceInfo: String = deviceName
 )
