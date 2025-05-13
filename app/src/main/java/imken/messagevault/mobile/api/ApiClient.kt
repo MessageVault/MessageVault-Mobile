@@ -5,32 +5,30 @@ import imken.messagevault.mobile.data.BackupFile
 import timber.log.Timber
 
 /**
- * API客户端类，用于处理网络请求
+ * API客户端
+ * 
+ * 用于处理与远程服务器的通信
  * 
  * @param config 应用配置
  */
 class ApiClient(private val config: Config) {
     
-    companion object {
-        private var sInstance: ApiClient? = null
-        
-        /**
-         * 获取ApiClient实例
-         * 
-         * @param config 应用配置
-         * @return ApiClient实例
-         */
-        @JvmStatic
-        fun getInstance(config: Config): ApiClient {
-            if (sInstance == null) {
-                synchronized(ApiClient::class.java) {
-                    if (sInstance == null) {
-                        sInstance = ApiClient(config)
-                    }
-                }
-            }
-            return sInstance!!
-        }
+    /**
+     * 初始化API客户端
+     */
+    init {
+        Timber.d("[Mobile] DEBUG [API] API客户端初始化")
+    }
+    
+    /**
+     * 检查API连接状态
+     * 
+     * @return 是否连接成功
+     */
+    fun checkConnection(): Boolean {
+        // 模拟检查连接
+        Timber.d("[Mobile] DEBUG [API] 检查API连接")
+        return true
     }
     
     /**

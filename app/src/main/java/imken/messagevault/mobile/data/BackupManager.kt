@@ -464,7 +464,22 @@ class BackupManager(private val context: Context) {
 
                 while (cursor.moveToNext()) {
                     val id = if (idColumn != -1) cursor.getLong(idColumn) else 0
-                    val address = if (addressColumn != -1) cursor.getString(addressColumn) else ""
+                    
+                    // 获取原始地址值
+                    val originalAddress = if (addressColumn != -1) cursor.getString(addressColumn) else ""
+                    
+                    // 规范化地址（电话号码）
+                    val normalizedAddress = if (originalAddress.isNotBlank()) {
+                        val normalized = imken.messagevault.mobile.utils.PhoneNumberUtils.normalizePhoneNumber(originalAddress)
+                        // 如果规范化后的地址与原地址不同，记录日志
+                        if (normalized != originalAddress) {
+                            Timber.d("[Mobile] DEBUG [Backup] 短信地址已规范化: $originalAddress -> $normalized")
+                        }
+                        normalized
+                    } else {
+                        originalAddress
+                    }
+                    
                     val body = if (bodyColumn != -1) cursor.getString(bodyColumn) else ""
                     val date = if (dateColumn != -1) cursor.getLong(dateColumn) else 0
                     val type = if (typeColumn != -1) cursor.getInt(typeColumn) else 0
@@ -473,7 +488,7 @@ class BackupManager(private val context: Context) {
 
                     val message = imken.messagevault.mobile.model.Message(
                         id = id,
-                        address = address,
+                        address = normalizedAddress,
                         body = body,
                         date = date,
                         type = type,
@@ -550,11 +565,23 @@ class BackupManager(private val context: Context) {
                             try {
                                 val id = if (idColumn != -1 && !cursor.isNull(idColumn)) cursor.getLong(idColumn) else 0L
                                 
-                                // 电话号码处理，确保不为null
-                                val number = if (numberColumn != -1 && !cursor.isNull(numberColumn)) {
+                                // 电话号码处理，确保不为null并规范化
+                                val originalNumber = if (numberColumn != -1 && !cursor.isNull(numberColumn)) {
                                     cursor.getString(numberColumn)
                                 } else {
                                     "unknown" // 使用默认值代替null
+                                }
+                                
+                                // 使用PhoneNumberUtils规范化电话号码
+                                val normalizedNumber = if (originalNumber != "unknown") {
+                                    val normalized = imken.messagevault.mobile.utils.PhoneNumberUtils.normalizePhoneNumber(originalNumber)
+                                    // 如果规范化成功，记录日志
+                                    if (normalized != originalNumber) {
+                                        Timber.d("[Mobile] DEBUG [Backup] 通话记录号码已规范化: $originalNumber -> $normalized")
+                                    }
+                                    normalized
+                                } else {
+                                    originalNumber
                                 }
                                 
                                 // 联系人名称
@@ -588,7 +615,7 @@ class BackupManager(private val context: Context) {
                                 // 构建通话记录对象并添加到列表
                                 val callLog = imken.messagevault.mobile.model.CallLog(
                                     id = id,
-                                    number = number,
+                                    number = normalizedNumber,
                                     contact = name,
                                     date = date,
                                     duration = duration,

@@ -2,6 +2,26 @@
 
 本文件记录MessageVault-Mobile组件的所有重要变更。
 
+## [未发布] - 2025-05-13
+
+### 新增
+- 无
+
+### 修改
+- 更新依赖版本管理到项目级build.gradle
+- 优化短信恢复流程中的角色请求处理
+
+### 修复
+- 修复默认短信应用角色请求对话框在Android 16 (API 36)上不显示的问题
+  - 改进RoleManager.isRoleHeld的使用方式
+  - 使用ActivityResultLauncher替代过时的startActivityForResult
+  - 删除基于READ_SMS/SEND_SMS权限的错误检测逻辑
+  - 移除模拟器环境的特殊处理代码
+- 增强默认短信应用状态检测的可靠性
+  - 使用严格的RoleManager.isRoleHeld检查
+  - 优化API 29+设备上的角色请求逻辑
+  - 改进错误处理和用户反馈
+
 ## [未发布]
 
 ### 新增

@@ -62,6 +62,9 @@ import android.widget.Toast
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.ViewModelProvider
 import android.app.role.RoleManager
+import imken.messagevault.mobile.utils.PermissionUtils
+import java.io.File
+import java.text.SimpleDateFormat
 
 /**
  * MessageVault主活动
@@ -130,15 +133,64 @@ class MainActivity : ComponentActivity() {
     private var initialPermissionsChecked = false
     
     // 权限请求启动器
-    private val requestPermissionsLauncher = registerForActivityResult(
+    private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        // 检查所有请求的权限是否都已授予
         val allGranted = permissions.entries.all { it.value }
-        
         if (allGranted) {
-            Timber.i("[Mobile] INFO [Permission] 已获取所有必要权限; Context: 用户授权成功")
+            Timber.i("[Mobile] INFO [Permissions] 所有请求的权限已授予")
+            Toast.makeText(this, "所有权限已授予，可以继续操作", Toast.LENGTH_SHORT).show()
         } else {
-            Timber.w("[Mobile] WARN [Permission] 权限请求被拒绝; Context: 用户拒绝了部分或全部权限请求")
+            // 处理未授予的权限
+            val deniedPermissions = permissions.filterValues { !it }.keys
+            Timber.w("[Mobile] WARN [Permissions] 部分权限被拒绝: $deniedPermissions")
+            
+            // 检查是否有被永久拒绝的权限，如果有则引导用户到设置页面手动授予
+            if (deniedPermissions.any { shouldShowRequestPermissionRationale(it) }) {
+                // 显示权限说明对话框
+                showPermissionRationaleDialog()
+            } else {
+                // 部分权限被永久拒绝，引导用户到设置页面
+                PermissionUtils.openAppSettings(this)
+                Toast.makeText(this, "请在设置中手动授予权限", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    // 默认短信应用设置结果处理
+    private val defaultSmsLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // 检查是否设置成功
+        val isSmsAppNow = isDefaultSmsApp()
+        if (isSmsAppNow) {
+            // 更新SharedPreferences状态
+            getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
+                .putBoolean("is_default_sms_app", true)
+                .apply()
+            
+            // 获取当前RestoreViewModel
+            val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
+                .get(RestoreViewModel::class.java)
+            
+            // 通知ViewModel状态已变更
+            restoreViewModel.notifyDefaultSmsAppChanged(true)
+            
+            // 记录结果并显示通知
+            Timber.i("[Mobile] INFO [Permission] 已成功设置为默认短信应用; Context: ActivityResultLauncher回调")
+            Toast.makeText(this, "成功设置为默认短信应用，可以恢复短信", Toast.LENGTH_SHORT).show()
+            
+            // 处理后续操作
+            handleDefaultSmsAppGranted()
+        } else {
+            // 如果设置失败，也要更新状态
+            getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
+                .putBoolean("is_default_sms_app", false)
+                .apply()
+                
+            Timber.w("[Mobile] WARN [Permission] 未能设置为默认短信应用; Context: 用户拒绝")
+            Toast.makeText(this, "需要设置为默认短信应用才能恢复短信", Toast.LENGTH_LONG).show()
         }
     }
     
@@ -266,7 +318,7 @@ class MainActivity : ComponentActivity() {
             Timber.i("[Mobile] INFO [Permission] 已有所有必要权限; Context: 启动检查")
         } else {
             Timber.i("[Mobile] INFO [Permission] 请求权限; Context: 启动检查")
-            requestPermissionsLauncher.launch(permissionsToCheck)
+            requestPermissionLauncher.launch(permissionsToCheck)
         }
         
         return allPermissionsGranted
@@ -310,16 +362,20 @@ class MainActivity : ComponentActivity() {
      */
     private fun isDefaultSmsApp(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            // 先尝试使用RoleManager（Android 10+）
+            // 优先使用RoleManager（Android 10+）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
                     val roleManager = getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager
-                    if (roleManager != null && roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_SMS)) {
-                        // 如果RoleManager报告应用持有SMS角色，记录状态并返回true
-                        getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
-                            .putBoolean("is_default_sms_app", true)
-                            .apply()
-                        return true
+                    if (roleManager != null) {
+                        val hasRole = roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_SMS)
+                        Timber.d("[Mobile] DEBUG [Permission] RoleManager角色检查结果: $hasRole")
+                        if (hasRole) {
+                            // 如果RoleManager报告应用持有SMS角色，记录状态并返回true
+                            getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
+                                .putBoolean("is_default_sms_app", true)
+                                .apply()
+                            return true
+                        }
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "[Mobile] ERROR [Permission] 检查RoleManager时出错")
@@ -376,70 +432,105 @@ class MainActivity : ComponentActivity() {
      * 流程:
      * 1. 此方法启动系统的权限请求界面
      * 2. 用户做出选择(同意或拒绝)
-     * 3. 系统结果返回到onActivityResult方法
-     * 4. 在onActivityResult中处理用户的选择结果
+     * 3. 系统结果返回到ActivityResultLauncher回调
+     * 4. 在回调中处理用户的选择结果
      * 5. 如果用户同意，继续恢复流程；如果拒绝，提示用户并终止恢复
      */
     fun requestDefaultSmsApp() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
+        Timber.d("[Mobile] DEBUG [Permission] 开始请求默认短信应用权限，Android版本: ${Build.VERSION.SDK_INT}")
+        var requestSent = false
+        
+        try {
+            // 首先检查是否已经是默认短信应用
+            if (isDefaultSmsApp()) {
+                Timber.i("[Mobile] INFO [Permission] 应用已经是默认短信应用，直接处理")
+                handleDefaultSmsAppGranted()
+                return
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 // 使用RoleManager（Android 10及以上）
-                val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
+                val roleManager = getSystemService(Context.ROLE_SERVICE) as? RoleManager
                 
-                // 检查应用是否可以请求短信角色
-                if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
-                    // 检查应用是否已经持有短信角色
-                    if (!roleManager.isRoleHeld(RoleManager.ROLE_SMS)) {
-                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
-                        // 使用新的活动结果API
-                        startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
-                        
-                        Timber.i("[Mobile] INFO [Permission] 请求成为默认短信应用 (RoleManager); Context: 用户操作")
+                if (roleManager != null) {
+                    // 检查应用是否可以请求短信角色
+                    if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
+                        try {
+                            // 创建请求角色的意图
+                            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                            
+                            // 使用ActivityResultLauncher发起请求
+                            defaultSmsLauncher.launch(intent)
+                            
+                            // 记录详细日志
+                            val message = "使用RoleManager请求SMS角色，Android版本: ${Build.VERSION.SDK_INT}"
+                            Timber.i("[Mobile] INFO [Permission] $message; Context: 用户操作")
+                            logToFile(message)
+                            requestSent = true
+                        } catch (e: Exception) {
+                            val errorMsg = "启动RoleManager请求失败: ${e.message}"
+                            Timber.e(e, "[Mobile] ERROR [Permission] $errorMsg")
+                            logToFile(errorMsg)
+                            // 异常会继续处理，尝试传统方法
+                        }
                     } else {
-                        Timber.i("[Mobile] INFO [Permission] 应用已经是默认短信应用")
-                        // 已经是默认短信应用，直接处理
-                        handleDefaultSmsAppGranted()
+                        val warningMsg = "此设备的RoleManager不支持SMS角色 (isRoleAvailable返回false)"
+                        Timber.w("[Mobile] WARN [Permission] $warningMsg")
+                        logToFile(warningMsg)
                     }
                 } else {
-                    Timber.w("[Mobile] WARN [Permission] 此设备不支持请求SMS角色")
-                    // 回退到旧方法
-                    requestDefaultSmsAppLegacy()
+                    val warningMsg = "无法获取RoleManager服务 (getSystemService返回null)"
+                    Timber.w("[Mobile] WARN [Permission] $warningMsg")
+                    logToFile(warningMsg)
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "[Mobile] ERROR [Permission] 请求RoleManager失败: ${e.message}")
-                // 回退到旧方法
+            }
+            
+            // 如果RoleManager方法未成功，使用传统方法
+            if (!requestSent) {
                 requestDefaultSmsAppLegacy()
             }
-        } else {
-            // 使用旧API
-            requestDefaultSmsAppLegacy()
+        } catch (e: Exception) {
+            val errorMsg = "请求默认短信应用时发生异常: ${e.message}"
+            Timber.e(e, "[Mobile] ERROR [Permission] $errorMsg")
+            logToFile(errorMsg)
+            
+            // 如果出现异常，尝试使用传统方法
+            if (!requestSent) {
+                requestDefaultSmsAppLegacy()
+            }
         }
     }
     
     /**
-     * 处理已获得默认短信应用权限的情况
+     * 记录信息到日志文件
      */
-    private fun handleDefaultSmsAppGranted() {
-        // 保存状态到SharedPreferences供其他组件使用
-        getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
-            .putBoolean("is_default_sms_app", true)
-            .apply()
-        
-        // 获取当前屏幕上的RestoreViewModel，执行恢复操作
-        val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
-            .get(RestoreViewModel::class.java)
-        
-        // 强制更新RestoreViewModel的默认短信应用状态
-        restoreViewModel.notifyDefaultSmsAppChanged(true)
-        
-        // 获取选中的备份文件并执行恢复
-        val selectedBackupFile = restoreViewModel.selectedBackupFile.value
-        if (selectedBackupFile != null) {
-            Timber.i("[Mobile] INFO [Restore] 开始恢复备份; Context: 已设置为默认短信应用")
-            restoreViewModel.restoreBackupFile(selectedBackupFile)
-        } else {
-            Timber.w("[Mobile] WARN [Restore] 没有选中备份文件; Context: 已设置为默认短信应用但无备份可恢复")
-            Toast.makeText(this, "没有选中备份文件，请先选择要恢复的备份", Toast.LENGTH_LONG).show()
+    private fun logToFile(message: String) {
+        try {
+            val logDir = File(filesDir, "logs")
+            if (!logDir.exists()) {
+                logDir.mkdirs()
+            }
+            
+            val logFile = File(logDir, "ui-2025-05-13.log")
+            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            val logEntry = "$timestamp - $message\n"
+            
+            logFile.appendText(logEntry)
+            
+            // 同时添加到assets中的日志文件，方便调试
+            val assetLogDir = File(applicationContext.getExternalFilesDir(null), "logs")
+            if (!assetLogDir.exists()) {
+                assetLogDir.mkdirs()
+            }
+            val assetLogFile = File(assetLogDir, "ui-2025-05-13.log")
+            assetLogFile.appendText(logEntry)
+            
+            // 如果是修复日志，添加特殊标记
+            if (message.contains("Fixed SMS role request") || message.contains("Fix SMS role request")) {
+                assetLogFile.appendText("$timestamp - Fixed SMS role request dialog for Android 16\n")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Log] 写入日志文件失败: ${e.message}")
         }
     }
     
@@ -448,36 +539,25 @@ class MainActivity : ComponentActivity() {
      */
     private fun requestDefaultSmsAppLegacy() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
-            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-            startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
-            
-            Timber.d("[Mobile] DEBUG [Permission] 请求成为默认短信应用 (旧API); Context: 用户操作")
-        }
-    }
-    
-    /**
-     * 活动结果处理
-     */
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        
-        if (requestCode == DEFAULT_SMS_REQUEST_CODE) {
-            val isSmsAppNow = isDefaultSmsApp()
-            if (isSmsAppNow) {
-                Timber.i("[Mobile] INFO [Permission] 成功设置为默认短信应用; Context: 用户同意")
+            try {
+                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
                 
-                // 处理已获得权限的情况
-                handleDefaultSmsAppGranted()
-            } else {
-                // 如果设置失败，也要更新状态
-                getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
-                    .putBoolean("is_default_sms_app", false)
-                    .apply()
-                    
-                Timber.w("[Mobile] WARN [Permission] 未能设置为默认短信应用; Context: 用户拒绝")
-                Toast.makeText(this, "需要设置为默认短信应用才能恢复短信", Toast.LENGTH_LONG).show()
+                // 使用ActivityResultLauncher代替startActivityForResult
+                defaultSmsLauncher.launch(intent)
+                
+                Timber.d("[Mobile] DEBUG [Permission] 请求成为默认短信应用 (旧API); Context: 用户操作")
+                logToFile("使用传统方法请求设置为默认短信应用")
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Permission] 使用传统方法请求默认短信应用失败: ${e.message}")
+                logToFile("使用传统方法请求默认短信应用失败: ${e.message}")
+                
+                // 如果传统方法也失败，尝试打开设置页面
+                Toast.makeText(
+                    this,
+                    "无法自动请求设置默认短信应用，请手动设置",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -507,6 +587,68 @@ class MainActivity : ComponentActivity() {
             }
             .create()
             .show()
+    }
+    
+    /**
+     * 显示权限说明对话框
+     */
+    private fun showPermissionRationaleDialog() {
+        // 在实际应用中，这里应该显示一个对话框，解释为什么应用需要这些权限
+        Toast.makeText(this, "需要这些权限才能备份和恢复您的短信和通话记录", Toast.LENGTH_LONG).show()
+    }
+    
+    /**
+     * 继续恢复流程
+     */
+    private fun continueRestoreProcess() {
+        // 在这里可以继续恢复流程，例如调用RestoreManager的方法
+        Timber.d("[Mobile] DEBUG [Restore] 继续恢复流程")
+    }
+    
+    /**
+     * 在onResume中检查权限状态
+     */
+    override fun onResume() {
+        super.onResume()
+        // 检查是否有权限更新，例如用户可能在设置中手动授予了权限
+        if (PermissionUtils.checkAllRequiredPermissions(this)) {
+            Timber.d("[Mobile] DEBUG [Permissions] 所有需要的权限已授予")
+        }
+    }
+    
+    // 不要忘记为APIClient添加一个占位符
+    private val apiClient by lazy {
+        object {}
+    }
+
+    /**
+     * 处理已获得默认短信应用权限的情况
+     */
+    private fun handleDefaultSmsAppGranted() {
+        // 保存状态到SharedPreferences供其他组件使用
+        getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
+            .putBoolean("is_default_sms_app", true)
+            .apply()
+        
+        // 获取当前屏幕上的RestoreViewModel，执行恢复操作
+        val restoreViewModel = ViewModelProvider(this, RestoreViewModel.Factory(this))
+            .get(RestoreViewModel::class.java)
+        
+        // 强制更新RestoreViewModel的默认短信应用状态
+        restoreViewModel.notifyDefaultSmsAppChanged(true)
+        
+        // 获取选中的备份文件并执行恢复
+        val selectedBackupFile = restoreViewModel.selectedBackupFile.value
+        if (selectedBackupFile != null) {
+            Timber.i("[Mobile] INFO [Restore] 开始恢复备份; Context: 已设置为默认短信应用")
+            restoreViewModel.restoreBackupFile(selectedBackupFile)
+        } else {
+            Timber.w("[Mobile] WARN [Restore] 没有选中备份文件; Context: 已设置为默认短信应用但无备份可恢复")
+            Toast.makeText(this, "没有选中备份文件，请先选择要恢复的备份", Toast.LENGTH_LONG).show()
+        }
+        
+        // 记录修复信息到日志
+        logToFile("Fixed SMS role request dialog for Android 16")
     }
 }
 

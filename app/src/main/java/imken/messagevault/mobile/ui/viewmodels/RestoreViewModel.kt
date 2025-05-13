@@ -332,7 +332,7 @@ class RestoreViewModel(
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            // 先尝试使用RoleManager（Android 10+）
+            // 优先使用RoleManager（Android 10+）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
                     val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager
@@ -348,51 +348,11 @@ class RestoreViewModel(
                 }
             }
             
-            // 再尝试传统方法
+            // 如果RoleManager检查未成功或不可用，使用传统方法
             val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
-            
-            // 处理系统返回null的特殊情况
-            if (defaultSmsPackage == null) {
-                Timber.w("[Mobile] WARN [Restore] 系统返回了null作为默认短信应用包名，尝试使用替代方法检查")
-                
-                // 尝试检查应用是否有接收SMS的权限
-                val hasReceiveSmsPermission = context.checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) == 
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                val hasSendSmsPermission = context.checkSelfPermission(android.Manifest.permission.SEND_SMS) == 
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                    
-                val hasPermissions = hasReceiveSmsPermission && hasSendSmsPermission
-                
-                // 检查MainActivity的报告
-                val mainActivityReportedAsDefault = 
-                    context.getSharedPreferences("sms_app_status", Context.MODE_PRIVATE)
-                        .getBoolean("is_default_sms_app", false)
-                
-                Timber.d("[Mobile] DEBUG [Restore] 替代检查 - 权限状态: $hasPermissions, MainActivity报告: $mainActivityReportedAsDefault")
-                
-                // 如果MainActivity报告为默认且有权限，则认为是默认应用
-                if (mainActivityReportedAsDefault && hasPermissions) {
-                    Timber.i("[Mobile] INFO [Restore] 虽然系统API返回null，但MainActivity报告应用是默认短信应用且拥有必要权限")
-                    return true
-                }
-                
-                // 对于模拟器和Android SDK环境的特殊处理
-                if (Build.PRODUCT.contains("sdk") || Build.BRAND.contains("generic")) {
-                    Timber.i("[Mobile] INFO [Restore] 检测到模拟器或SDK环境，假定应用有默认短信权限")
-                    // 将这个状态保存在SharedPreferences中供其他组件使用
-                    context.getSharedPreferences("sms_app_status", Context.MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("is_default_sms_app", true)
-                        .apply()
-                    return true
-                }
-                
-                return false
-            }
-            
             val isDefault = context.packageName == defaultSmsPackage
             
-            // 添加强制日志记录，帮助调试
+            // 添加详细日志
             Timber.d("[Mobile] DEBUG [Restore] 默认短信应用检查: 当前=${context.packageName}, 系统默认=$defaultSmsPackage, 是默认=${isDefault}")
             
             return isDefault

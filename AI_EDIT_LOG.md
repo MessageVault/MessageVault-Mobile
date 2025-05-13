@@ -2,6 +2,37 @@
 
 本文件记录MessageVault-Mobile组件中所有AI辅助的编辑和生成内容。
 
+## 2025-05-13: 修复Android 16上默认短信角色请求对话框问题（Claude 3.7 Sonnet）
+
+**使用的AI工具**: Claude 3.7 Sonnet (Cursor AI)
+
+**变更描述**: 
+- 修复了在Android 16 (API 36)上默认短信应用角色请求对话框不显示的问题
+- 移除了基于READ_SMS/SEND_SMS权限检查的错误检测逻辑
+- 移除了对模拟器环境的特殊处理逻辑
+- 使用ActivityResultLauncher替代过时的startActivityForResult
+- 改进了RoleManager.isRoleHeld的使用
+
+**AI贡献**:
+- 更新了MainActivity、RestoreManager和PermissionUtils中的isDefaultSmsApp方法：
+  - 移除了基于READ_SMS和SEND_SMS权限检查的逻辑
+  - 只使用RoleManager.isRoleHeld和Telephony.Sms.getDefaultSmsPackage方法
+  - 删除了针对模拟器环境的特殊处理代码
+- 更新了RestoreManager的requestDefaultSmsApp方法：
+  - 使用ActivityResultLauncher替代startActivityForResult
+  - 优化RoleManager检查和调用逻辑
+  - 从Android R (30)降低至Android Q (29)以增强兼容性
+- 增强了调试日志，更详细地记录SMS角色相关操作
+- 更新了相关文档，记录修复内容
+
+**人工审核与调整**:
+- 验证修复在Android 16 (API 36)设备上的有效性
+- 确认RoleManager.isRoleHeld正确检测角色状态
+- 检查ActivityResultLauncher正确处理请求结果
+- 测试整个SMS恢复流程
+
+2025-05-13T21:16:00+08:00 [Mobile] INFO [UI] Fixed SMS role request dialog and role check for Android 16
+
 ## 2025-04-20: 修复高版本Android上默认短信应用检测问题（Claude 3.7 Sonnet）
 
 **使用的AI工具**: Claude 3.7 Sonnet (Cursor AI)

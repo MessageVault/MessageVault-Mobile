@@ -17,12 +17,11 @@ import timber.log.Timber
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 /**
- * 配置类
- *
- * 管理应用程序配置，包括备份设置、服务器地址等
- * 使用 DataStore 代替 SharedPreferences
+ * 应用配置
+ * 
+ * 管理应用的各种配置信息
  */
-class Config(context: Context) {
+class Config(private val context: Context) {
     private val dataStore = context.dataStore
     private val mContext: Context = context.applicationContext
 
@@ -56,6 +55,40 @@ class Config(context: Context) {
         private val KEY_BACKUP_DIR = stringPreferencesKey("backup_directory")
         private val KEY_LANGUAGE = stringPreferencesKey("language")
         private val KEY_AUTH_TOKEN = stringPreferencesKey("auth_token")
+    }
+
+    // 备份目录名称
+    private val backupDirectoryName = "backups"
+    
+    /**
+     * 初始化配置
+     */
+    init {
+        Timber.d("[Mobile] DEBUG [Config] 配置初始化")
+    }
+    
+    /**
+     * 获取备份目录名称
+     * 
+     * @return 备份目录名称
+     */
+    fun getBackupDirectoryName(): String {
+        return backupDirectoryName
+    }
+    
+    /**
+     * 获取应用版本
+     * 
+     * @return 应用版本名称
+     */
+    fun getAppVersion(): String {
+        return try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Config] 获取应用版本失败")
+            "未知版本"
+        }
     }
 
     /**
@@ -105,33 +138,6 @@ class Config(context: Context) {
      */
     fun getFullApiUrl(): String {
         return "${getServerUrl()}/${getApiVersion()}"
-    }
-
-    /**
-     * 获取备份目录名称
-     * 
-     * 返回用于存储备份文件的目录名称
-     * 
-     * @return 备份目录名称字符串
-     */
-    fun getBackupDirectoryName(): String {
-        val backupDirFlow: Flow<String> = dataStore.data.map { preferences ->
-            preferences[KEY_BACKUP_DIR] ?: DEFAULT_BACKUP_DIR
-        }
-        return runBlocking { backupDirFlow.first() }
-    }
-
-    /**
-     * 设置备份目录名称
-     * 
-     * @param directoryName 备份目录名称
-     */
-    fun setBackupDirectoryName(directoryName: String) {
-        runBlocking {
-            dataStore.edit { preferences ->
-                preferences[KEY_BACKUP_DIR] = directoryName
-            }
-        }
     }
 
     /**

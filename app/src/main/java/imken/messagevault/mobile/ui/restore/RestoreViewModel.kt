@@ -95,25 +95,25 @@ class RestoreViewModel(
     /**
      * 恢复回调实现
      */
-    private val restoreCallback = object : RestoreManager.ProgressCallback {
-        override fun onStart(operation: String) {
-            _restoreState.value = RestoreState.InProgress(operation, 0)
-        }
+private val restoreCallback = object : RestoreManager.ProgressCallback {
+    override fun onStart(operation: String) {
+        _restoreState.value = RestoreState.InProgress(operation, 0)
+    }
 
-        override fun onProgressUpdate(operation: String, progress: Int) {
-            _restoreState.value = RestoreState.InProgress(operation, progress)
-        }
-        
-        override fun onProgressUpdate(operation: String, progress: Int, message: String) {
-            _restoreState.value = RestoreState.InProgress(operation, progress, message)
-        }
+    override fun onProgressUpdate(operation: String, progress: Int) {
+        _restoreState.value = RestoreState.InProgress(operation, progress)
+    }
+    
+    override fun onProgressUpdate(operation: String, progress: Int, message: String) {
+        _restoreState.value = RestoreState.InProgress(operation, progress, message)
+    }
 
-        override fun onComplete(success: Boolean, message: String) {
-            if (success) {
-                _restoreState.value = RestoreState.Success(message)
-            } else {
-                _restoreState.value = RestoreState.Error(message)
-            }
+    override fun onComplete(success: Boolean, message: String) {
+        if (success) {
+            _restoreState.value = RestoreState.Success(message)
+        } else {
+            _restoreState.value = RestoreState.Error(message)
+        }
         }
     }
 }

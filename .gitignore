@@ -64,3 +64,6 @@ java_pid*.hprof
 /app/build/outputs/
 /app/build/tmp/
 /build_debug_log.txt
+/build_log.txt
+/.cursor/rules/messagevault-project-notice.mdc
+/detailed_log.txt

@@ -1,45 +1,74 @@
 package imken.messagevault.mobile.data
 
+import android.content.ContentProviderOperation
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
-import android.provider.CallLog
+import android.content.Intent
+import android.database.ContentObserver
+import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.RemoteException
+import android.provider.ContactsContract
 import android.provider.Telephony
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import imken.messagevault.mobile.BuildConfig
 import imken.messagevault.mobile.api.ApiClient
 import imken.messagevault.mobile.config.Config
-import imken.messagevault.mobile.data.entity.CallLogsEntity
-import imken.messagevault.mobile.data.entity.ContactsEntity
-import imken.messagevault.mobile.data.entity.MessageEntity
-import imken.messagevault.mobile.data.models.BackupFile
-import imken.messagevault.mobile.data.models.BackupFileInfo
 import imken.messagevault.mobile.model.BackupData
 import imken.messagevault.mobile.model.Contact
 import imken.messagevault.mobile.model.Message
+import imken.messagevault.mobile.model.CallLog as ModelCallLog
+import imken.messagevault.mobile.models.BackupFile
+import imken.messagevault.mobile.models.MessageData
 import imken.messagevault.mobile.utils.Constants.SUPPORTED_VERSION
-import kotlinx.coroutines.Dispatchers
+import imken.messagevault.mobile.utils.PhoneNumberUtils
+import kotlinx.coroutines.Dispatchers as KotlinDispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.FileReader
 import java.util.Date
-import java.util.UUID
-import imken.messagevault.mobile.model.CallLog as ModelCallLog
-import android.provider.ContactsContract
-import com.google.gson.reflect.TypeToken
-import imken.messagevault.mobile.BuildConfig
-import android.provider.Settings
-import imken.messagevault.mobile.models.MessageData
-import android.content.ContentProviderOperation
-import android.content.ContentResolver
-import android.content.OperationApplicationException
-import android.net.Uri
-import android.os.RemoteException
 import java.util.concurrent.atomic.AtomicInteger
-import android.content.Intent
-import android.os.Build
 import android.app.Activity
-import kotlinx.coroutines.delay
+import android.content.OperationApplicationException
+import android.provider.Settings as AndroidSettings
+import android.provider.CallLog as AndroidCallLog
+import android.widget.Toast
+import android.provider.Settings
+import android.content.pm.PackageManager
+import androidx.activity.result.ActivityResultLauncher
+
+/**
+ * 消息实体类，用于数据处理
+ */
+data class MessageEntity(
+    val id: Long,
+    val address: String?,
+    val body: String,
+    val date: Long,
+    val type: Int,
+    val read: Int,
+    val status: Int,
+    val threadId: Long
+)
+
+/**
+ * 通话记录实体类，用于数据处理
+ */
+data class CallLogsEntity(
+    val id: Long,
+    val number: String?,
+    val name: String,
+    val date: Long,
+    val duration: Long,
+    val type: Int
+)
 
 /**
  * 恢复管理器
@@ -66,8 +95,8 @@ class RestoreManager(
      * 
      * @return 备份文件列表
      */
-    suspend fun getAvailableBackups(): List<imken.messagevault.mobile.models.BackupFile> = withContext(Dispatchers.IO) {
-        val backupFiles = mutableListOf<imken.messagevault.mobile.models.BackupFile>()
+    suspend fun getAvailableBackups(): List<BackupFile> = withContext(KotlinDispatchers.IO) {
+        val backupFiles = mutableListOf<BackupFile>()
         
         try {
             // 使用config获取备份目录名称而不是硬编码字符串
@@ -76,7 +105,7 @@ class RestoreManager(
             // 检查备份目录是否存在
             if (!backupDir.exists()) {
                 Timber.w("[Mobile] WARN [Restore] 备份目录不存在: ${backupDir.absolutePath}")
-                return@withContext emptyList<imken.messagevault.mobile.models.BackupFile>()
+                return@withContext emptyList<BackupFile>()
             }
             
             // 获取备份目录中的所有JSON文件
@@ -88,9 +117,9 @@ class RestoreManager(
                 // 过滤无效的备份文件
                 val validFiles = files.filter { validateBackupFile(it) }
                 backupFiles.addAll(validFiles.map { file -> 
-                    val deviceId = Settings.Secure.getString(
+                    val deviceId = AndroidSettings.Secure.getString(
                         context.contentResolver, 
-                        Settings.Secure.ANDROID_ID
+                        AndroidSettings.Secure.ANDROID_ID
                     ) ?: "unknown"
                     
                     // 解析备份文件以获取SMS和通话记录数量
@@ -106,7 +135,7 @@ class RestoreManager(
                     val smsCount = backupData?.messages?.size ?: 0
                     val callLogsCount = backupData?.callLogs?.size ?: 0
                     
-                    imken.messagevault.mobile.models.BackupFile(
+                    BackupFile(
                         filePath = file.absolutePath,
                         fileName = file.name,
                         fileSize = file.length(),
@@ -134,7 +163,7 @@ class RestoreManager(
      * @param backupFile 备份文件
      * @return 备份数据对象，如果解析失败则返回null
      */
-    suspend fun parseBackupFile(backupFile: imken.messagevault.mobile.models.BackupFile): BackupData? = withContext(Dispatchers.IO) {
+    suspend fun parseBackupFile(backupFile: BackupFile): BackupData? = withContext(KotlinDispatchers.IO) {
         try {
             val file = File(backupFile.filePath)
             FileReader(file).use { reader ->
@@ -179,7 +208,7 @@ class RestoreManager(
      * @param backupFile 备份文件
      * @return 恢复结果
      */
-    suspend fun restoreFromFile(backupFile: imken.messagevault.mobile.models.BackupFile): RestoreResult = withContext(Dispatchers.IO) {
+    suspend fun restoreFromFile(backupFile: BackupFile): RestoreResult = withContext(KotlinDispatchers.IO) {
         return@withContext restoreFromFile(backupFile, null)
     }
     
@@ -201,9 +230,9 @@ class RestoreManager(
      * @return 恢复结果
      */
     suspend fun restoreFromFile(
-        backupFile: imken.messagevault.mobile.models.BackupFile, 
+        backupFile: BackupFile, 
         progressCallback: ProgressCallback?
-    ): RestoreResult = withContext(Dispatchers.IO) {
+    ): RestoreResult = withContext(KotlinDispatchers.IO) {
         try {
             // 添加基础日志
             Timber.d("[Mobile] DEBUG [Restore] 开始恢复文件: ${backupFile.fileName}")
@@ -324,126 +353,48 @@ class RestoreManager(
     private suspend fun restoreMessagesWithProgress(
         messages: List<Message>,
         progressCallback: ProgressCallback?
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = withContext(KotlinDispatchers.IO) {
         var restoredCount = 0
         val totalCount = messages.size
         Timber.i("[Mobile] INFO [Restore] 开始恢复短信，总数: $totalCount")
         
-        // 检查权限
-        if (!hasSmsPermissions()) {
-            Timber.e("[Mobile] ERROR [Restore] 没有短信权限，无法恢复短信")
-            return@withContext 0
-        }
-        
         // 计算进度更新频率
         val progressStep = if (totalCount > 100) totalCount / 20 else 1
         
-        // 诊断并修复备份数据中的问题
+        // 验证并修复消息地址
         val fixedMessages = validateAndFixMessageAddresses(messages)
         
-        // 按地址分组消息，确保相同联系人的消息在同一会话中
-        val messagesByAddress = fixedMessages.groupBy { it.address }
+        // 按联系人分组短信，提高批量恢复效率
+        val messagesByContact = fixedMessages.groupBy { it.address }
         
-        // 维护地址到threadId的映射
-        val addressToThreadId = mutableMapOf<String, Long>()
-        
-        // 按批次处理大量短信，避免内存压力
         var processedCount = 0
         
-        // 先处理每个联系人的第一条消息，获取系统分配的threadId
-        for ((address, addressMessages) in messagesByAddress) {
-            if (address.isNullOrBlank()) continue
+        // 恢复所有短信
+        for ((address, contactMessages) in messagesByContact) {
+            Timber.d("[Mobile] DEBUG [Restore] 处理联系人消息: 联系人=$address, 消息数量=${contactMessages.size}")
             
-            try {
-                // 先插入第一条消息，获取threadId
-                val firstMessage = addressMessages.first()
-                val values = ContentValues().apply {
-                    put(Telephony.Sms.ADDRESS, address)
-                    put(Telephony.Sms.BODY, firstMessage.body ?: "")
-                    put(Telephony.Sms.DATE, firstMessage.date)
-                    put(Telephony.Sms.DATE_SENT, firstMessage.date)
-                    put(Telephony.Sms.READ, firstMessage.readState ?: 0)
-                    put(Telephony.Sms.TYPE, firstMessage.type)
-                    put(Telephony.Sms.STATUS, firstMessage.messageStatus ?: 0)
-                }
-                
-                // 根据短信类型选择正确的URI
-                val uri = when (firstMessage.type) {
-                    Telephony.Sms.MESSAGE_TYPE_INBOX -> contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
-                    Telephony.Sms.MESSAGE_TYPE_SENT -> contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
-                    Telephony.Sms.MESSAGE_TYPE_OUTBOX -> contentResolver.insert(Telephony.Sms.Outbox.CONTENT_URI, values)
-                    Telephony.Sms.MESSAGE_TYPE_DRAFT -> contentResolver.insert(Telephony.Sms.Draft.CONTENT_URI, values)
-                    else -> contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
-                }
-                
-                if (uri != null) {
-                    restoredCount++
-                    processedCount++
-                    
-                    // 查询刚插入消息的threadId
-                    val cursor = contentResolver.query(
-                        uri, 
-                        arrayOf(Telephony.Sms.THREAD_ID), 
-                        null, 
-                        null, 
-                        null
-                    )
-                    
-                    cursor?.use {
-                        if (it.moveToFirst()) {
-                            val threadId = it.getLong(it.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID))
-                            addressToThreadId[address] = threadId
-                            Timber.d("[Mobile] DEBUG [Restore] 为地址 $address 获取到threadId: $threadId")
+            // 排序消息按日期从旧到新
+            val sortedMessages = contactMessages.sortedBy { it.date }
+            
+            for (smsMessage in sortedMessages) {
+                try {
+                    // 创建短信内容值
+                    val values = ContentValues().apply {
+                        put(Telephony.Sms.ADDRESS, smsMessage.address)
+                        put(Telephony.Sms.BODY, smsMessage.body)
+                        put(Telephony.Sms.DATE, smsMessage.date)
+                        put(Telephony.Sms.TYPE, smsMessage.type)
+                        put(Telephony.Sms.READ, smsMessage.readState ?: 0)
+                        put(Telephony.Sms.STATUS, smsMessage.messageStatus ?: 0)
+                        
+                        // 如果有线程ID
+                        if (smsMessage.threadId != null && smsMessage.threadId > 0) {
+                            put(Telephony.Sms.THREAD_ID, smsMessage.threadId)
                         }
                     }
-                }
-                
-                // 报告进度
-                if (processedCount % progressStep == 0) {
-                    val currentProgress = (processedCount * 100) / totalCount
-                    val progressMessage = "恢复短信进度: $processedCount/$totalCount"
-                    progressCallback?.onProgressUpdate("短信", currentProgress, progressMessage)
-                    Timber.d("[Mobile] DEBUG [Restore] $progressMessage ($currentProgress%)")
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "[Mobile] ERROR [Restore] 恢复第一条短信失败: 地址=${address}, ${e.message}")
-            }
-        }
-        
-        // 然后处理每个联系人的剩余消息，使用相同的threadId
-        for ((address, addressMessages) in messagesByAddress) {
-            if (address.isNullOrBlank() || addressMessages.size <= 1) continue
-            
-            val threadId = addressToThreadId[address]
-            if (threadId == null) {
-                Timber.w("[Mobile] WARN [Restore] 未找到地址 $address 的threadId，跳过剩余消息")
-                continue
-            }
-            
-            // 从第二条消息开始处理
-            for (i in 1 until addressMessages.size) {
-                try {
-                    val message = addressMessages[i]
-                    val values = ContentValues().apply {
-                        put(Telephony.Sms.ADDRESS, address)
-                        put(Telephony.Sms.BODY, message.body ?: "")
-                        put(Telephony.Sms.DATE, message.date)
-                        put(Telephony.Sms.DATE_SENT, message.date)
-                        put(Telephony.Sms.READ, message.readState ?: 0)
-                        put(Telephony.Sms.TYPE, message.type)
-                        put(Telephony.Sms.STATUS, message.messageStatus ?: 0)
-                        put(Telephony.Sms.THREAD_ID, threadId) // 使用相同的threadId
-                    }
                     
-                    // 根据短信类型选择正确的URI
-                    val uri = when (message.type) {
-                        Telephony.Sms.MESSAGE_TYPE_INBOX -> contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
-                        Telephony.Sms.MESSAGE_TYPE_SENT -> contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
-                        Telephony.Sms.MESSAGE_TYPE_OUTBOX -> contentResolver.insert(Telephony.Sms.Outbox.CONTENT_URI, values)
-                        Telephony.Sms.MESSAGE_TYPE_DRAFT -> contentResolver.insert(Telephony.Sms.Draft.CONTENT_URI, values)
-                        else -> contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
-                    }
-                    
+                    // 插入短信
+                    val uri = contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
                     if (uri != null) {
                         restoredCount++
                     }
@@ -458,11 +409,11 @@ class RestoreManager(
                     }
                     
                     // 每处理10条消息暂停一下，避免系统过载
-                    if (i % 10 == 0) {
+                    if (processedCount % 10 == 0) {
                         delay(50)
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复短信失败: 地址=${address}, ${e.message}")
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复短信失败: 地址=${smsMessage.address}, ${e.message}")
                 }
             }
             
@@ -487,15 +438,18 @@ class RestoreManager(
     private fun validateAndFixMessageAddresses(messages: List<Message>): List<Message> {
         Timber.d("[Mobile] DEBUG [Restore] 开始验证和修复短信地址，数量: ${messages.size}")
         
+        // 导入电话号码工具类
+        val phoneNumberUtils = PhoneNumberUtils
+        
         // 统计空地址数量
         val emptyAddressCount = messages.count { it.address.isNullOrBlank() }
         if (emptyAddressCount > 0) {
             Timber.w("[Mobile] WARN [Restore] 发现 $emptyAddressCount 条短信缺少有效地址，将进行修复")
         }
         
-        // 修复短信地址
+        // 修复并标准化短信地址
         return messages.map { originalMessage ->
-            // 只有当地址真的为空或空白时才生成替代地址
+            // 处理空地址情况
             if (originalMessage.address.isNullOrBlank()) {
                 // 创建新消息对象而不是修改原对象，避免引用问题
                 Message(
@@ -509,8 +463,27 @@ class RestoreManager(
                     threadId = originalMessage.threadId
                 )
             } else {
-                // 有效地址，直接使用原消息
-                originalMessage
+                // 标准化电话号码
+                val normalizedAddress = phoneNumberUtils.normalizePhoneNumber(originalMessage.address)
+                
+                // 如果地址标准化后不同，创建新的消息对象
+                if (normalizedAddress != originalMessage.address) {
+                    Timber.d("[Mobile] DEBUG [Restore] 标准化地址: ${originalMessage.address} -> $normalizedAddress")
+                    
+                    Message(
+                        id = originalMessage.id,
+                        address = normalizedAddress, // 使用标准化后的地址
+                        body = originalMessage.body,
+                        date = originalMessage.date,
+                        type = originalMessage.type,
+                        readState = originalMessage.readState,
+                        messageStatus = originalMessage.messageStatus,
+                        threadId = originalMessage.threadId
+                    )
+                } else {
+                    // 有效地址且无需标准化，直接使用原消息
+                    originalMessage
+                }
             }
         }
     }
@@ -521,135 +494,160 @@ class RestoreManager(
     private suspend fun restoreCallLogsWithProgress(
         callLogs: List<ModelCallLog>,
         progressCallback: ProgressCallback?
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = withContext(KotlinDispatchers.IO) {
         var restoredCount = 0
         val totalCount = callLogs.size
         Timber.i("[Mobile] INFO [Restore] 开始恢复通话记录，总数: $totalCount")
         
         // 检查权限
         if (!hasCallLogPermissions()) {
-            Timber.e("[Mobile] ERROR [Restore] 没有通话记录权限，无法恢复通话记录")
+            Timber.e("[Mobile] ERROR [Restore] 没有通话记录权限，无法恢复")
             return@withContext 0
         }
         
         // 计算进度更新频率
-        val progressStep = if (totalCount > 100) totalCount / 10 else 1
+        val progressStep = if (totalCount > 100) totalCount / 20 else 1
         
-        // 修复通话记录中的空号码问题
+        // 预处理通话记录，修复电话号码格式
         val fixedCallLogs = callLogs.map { callLog ->
+            // 如果号码为空，使用原始记录
             if (callLog.number.isNullOrBlank()) {
-                // 创建新对象以避免修改原始数据
-                ModelCallLog(
-                    id = callLog.id,
-                    number = "unknown_${callLog.id}",
-                    type = callLog.type,
-                    date = callLog.date,
-                    duration = callLog.duration,
-                    contact = callLog.contact
-                )
-            } else {
                 callLog
-            }
-        }
-        
-        // 尝试从联系人数据库获取联系人名称
-        val numberToContactName = mutableMapOf<String, String>()
-        try {
-            for (callLog in fixedCallLogs) {
-                if (callLog.number.isNullOrBlank() || numberToContactName.containsKey(callLog.number)) continue
-                
-                val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(callLog.number))
-                contentResolver.query(
-                    uri,
-                    arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
-                    null,
-                    null,
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val contactName = cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.PhoneLookup.DISPLAY_NAME))
-                        if (!contactName.isNullOrBlank()) {
-                            numberToContactName[callLog.number] = contactName
-                            Timber.d("[Mobile] DEBUG [Restore] 为号码 ${callLog.number} 找到联系人: $contactName")
-                        }
-                    }
+            } else {
+                // 规范化电话号码
+                val normalizedNumber = PhoneNumberUtils.normalizePhoneNumber(callLog.number)
+                if (normalizedNumber != callLog.number) {
+                    Timber.d("[Mobile] DEBUG [Restore] 通话记录号码已规范化: ${callLog.number} -> $normalizedNumber")
+                    // 创建新对象并保留其他属性
+                    callLog.copy(number = normalizedNumber)
+                } else {
+                    callLog
                 }
             }
-            Timber.d("[Mobile] DEBUG [Restore] 从联系人数据库中找到 ${numberToContactName.size} 个联系人")
-        } catch (e: Exception) {
-            Timber.e(e, "[Mobile] ERROR [Restore] 查询联系人数据库失败: ${e.message}")
         }
         
-        // 按批次处理大量通话记录
-        val batchSize = 50
-        val totalBatches = (fixedCallLogs.size + batchSize - 1) / batchSize
+        // 按联系人分组通话记录，提高批量恢复效率
+        val callLogsByNumber = mutableMapOf<String, MutableList<ModelCallLog>>()
         
-        for (batchIndex in 0 until totalBatches) {
-            val startIndex = batchIndex * batchSize
-            val endIndex = minOf(startIndex + batchSize, fixedCallLogs.size)
-            val currentBatch = fixedCallLogs.subList(startIndex, endIndex)
-            
-            currentBatch.forEachIndexed { indexInBatch, callLog ->
+        // 为每个通话记录找到正确的分组键
+        fixedCallLogs.forEach { callLog ->
+            if (!callLog.number.isNullOrBlank()) {
+                // 获取此号码的所有可能变体
+                val normalized = PhoneNumberUtils.normalizePhoneNumber(callLog.number)
+                
+                // 将通话记录添加到对应的分组
+                if (!callLogsByNumber.containsKey(normalized)) {
+                    callLogsByNumber[normalized] = mutableListOf()
+                }
+                callLogsByNumber[normalized]!!.add(callLog)
+            } else {
+                // 处理号码为空的情况
+                val unknownKey = "unknown_${callLog.id}"
+                if (!callLogsByNumber.containsKey(unknownKey)) {
+                    callLogsByNumber[unknownKey] = mutableListOf()
+                }
+                callLogsByNumber[unknownKey]!!.add(callLog)
+            }
+        }
+        
+        Timber.d("[Mobile] DEBUG [Restore] 按规范化号码分组后，共有 ${callLogsByNumber.size} 个不同联系人")
+        
+        var processedCount = 0
+        
+        // 恢复所有通话记录
+        for ((_, numberCallLogs) in callLogsByNumber) {
+            for (callLog in numberCallLogs) {
                 try {
-                    val index = startIndex + indexInBatch
                     val values = ContentValues().apply {
-                        put(CallLog.Calls.NUMBER, callLog.number)
-                        put(CallLog.Calls.TYPE, callLog.type)
+                        put(AndroidCallLog.Calls.NUMBER, callLog.number ?: "")
+                        put(AndroidCallLog.Calls.TYPE, callLog.type)
+                        put(AndroidCallLog.Calls.DATE, callLog.date.toLong())
+                        put(AndroidCallLog.Calls.DURATION, callLog.duration.toLong())
+                        put(AndroidCallLog.Calls.NEW, 0) // 标记为已读
                         
-                        // 确保日期值有效
-                        val validDate = if (callLog.date > 0) callLog.date else System.currentTimeMillis()
-                        put(CallLog.Calls.DATE, validDate)
-                        
-                        // 确保通话时长有效
-                        val validDuration = if (callLog.duration >= 0) callLog.duration else 0
-                        put(CallLog.Calls.DURATION, validDuration)
-                        
-                        // 首先使用备份中的联系人名称
-                        var contactName = callLog.contact
-                        
-                        // 如果备份中没有联系人名称，尝试使用从联系人数据库中获取的名称
-                        if (contactName.isNullOrBlank()) {
-                            contactName = numberToContactName[callLog.number]
-                        }
-                        
-                        // 设置联系人名称
-                        if (!contactName.isNullOrBlank()) {
-                            put(CallLog.Calls.CACHED_NAME, contactName)
-                            put(CallLog.Calls.CACHED_NUMBER_TYPE, CallLog.Calls.PRESENTATION_ALLOWED)
+                        // 尝试匹配联系人
+                        if (!callLog.number.isNullOrBlank()) {
+                            val contactName = getContactNameFromNumber(callLog.number)
+                            if (contactName != null) {
+                                put(AndroidCallLog.Calls.CACHED_NAME, contactName)
+                                Timber.d("[Mobile] DEBUG [Restore] 通话记录匹配到联系人: ${callLog.number} -> $contactName")
+                            }
                         }
                     }
                     
-                    val uri = contentResolver.insert(CallLog.Calls.CONTENT_URI, values)
+                    val uri = contentResolver.insert(AndroidCallLog.Calls.CONTENT_URI, values)
                     if (uri != null) {
                         restoredCount++
-                        Timber.d("[Mobile] DEBUG [Restore] 成功恢复通话记录: 号码=${callLog.number}, 类型=${callLog.type}, 日期=${callLog.date}")
-                    } else {
-                        Timber.w("[Mobile] WARN [Restore] 恢复通话记录失败: 插入返回null, 号码=${callLog.number}")
                     }
                     
+                    processedCount++
                     // 报告进度
-                    if (index % progressStep == 0 || index == totalCount - 1) {
-                        val currentProgress = ((index + 1) * 100) / totalCount
-                        val progressMessage = "恢复通话记录进度: ${index + 1}/$totalCount"
+                    if (processedCount % progressStep == 0 || processedCount == totalCount) {
+                        val currentProgress = (processedCount * 100) / totalCount
+                        val progressMessage = "恢复通话记录进度: $processedCount/$totalCount"
                         progressCallback?.onProgressUpdate("通话记录", currentProgress, progressMessage)
                         Timber.d("[Mobile] DEBUG [Restore] $progressMessage ($currentProgress%)")
                     }
                     
                     // 每处理10条记录暂停一下，避免系统过载
-                    if (indexInBatch % 10 == 0) {
+                    if (processedCount % 10 == 0) {
                         delay(50)
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复通话记录失败: ID=${callLog.id}, 号码=${callLog.number}, ${e.message}")
+                    Timber.e(e, "[Mobile] ERROR [Restore] 恢复通话记录失败: 号码=${callLog.number}, ${e.message}")
                 }
             }
             
-            // 批次处理完成后让系统有时间处理数据
-            delay(200)
+            // 每处理完一个联系人的所有记录后暂停一下
+            delay(100)
         }
         
         Timber.i("[Mobile] INFO [Restore] 通话记录恢复完成: 成功=$restoredCount, 总数=$totalCount")
         return@withContext restoredCount
+    }
+    
+    /**
+     * 从电话号码获取联系人姓名，使用电话号码变体增强匹配率
+     */
+    private fun getContactNameFromNumber(phoneNumber: String): String? {
+        if (phoneNumber.isBlank()) return null
+        
+        // 首先尝试直接匹配原始号码
+        val name = getContactNameByExactNumber(phoneNumber)
+        if (name != null) return name
+        
+        // 若直接匹配失败，尝试匹配所有可能的变体
+        val variants = PhoneNumberUtils.getPossibleNumberVariants(phoneNumber)
+        for (variant in variants) {
+            val variantName = getContactNameByExactNumber(variant)
+            if (variantName != null) {
+                Timber.d("[Mobile] DEBUG [Restore] 通过号码变体匹配到联系人: $phoneNumber -> $variant -> $variantName")
+                return variantName
+            }
+        }
+        
+        return null
+    }
+    
+    /**
+     * 通过精确号码查询联系人姓名
+     */
+    private fun getContactNameByExactNumber(phoneNumber: String): String? {
+        val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+        val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+        
+        try {
+            val cursor = contentResolver.query(uri, projection, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    return it.getString(it.getColumnIndexOrThrow(ContactsContract.PhoneLookup.DISPLAY_NAME))
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[Mobile] ERROR [Restore] 查询联系人姓名失败: 号码=$phoneNumber, ${e.message}")
+        }
+        
+        return null
     }
     
     /**
@@ -676,7 +674,7 @@ class RestoreManager(
     private suspend fun restoreContactsWithProgress(
         contacts: List<Contact>,
         progressCallback: ProgressCallback?
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = withContext(KotlinDispatchers.IO) {
         var restoredCount = 0
         val totalCount = contacts.size
         Timber.i("[Mobile] INFO [Restore] 开始恢复联系人，总数: $totalCount")
@@ -811,7 +809,7 @@ class RestoreManager(
      * 
      * @param backupFile 备份文件
      */
-    private fun someRestoreMethod(backupFile: imken.messagevault.mobile.models.BackupFile) {
+    private fun someRestoreMethod(backupFile: BackupFile) {
         println("处理备份文件: ${backupFile.fileName}")
     }
     
@@ -885,9 +883,9 @@ class RestoreManager(
             body = this.body ?: "",
             date = this.date,
             type = this.type,
-            read = 0, // 默认值，因为Message类可能没有readState字段
-            status = 0, // 默认值，因为Message类可能没有messageStatus字段
-            threadId = 0  // 默认值，因为Message类可能没有threadId字段
+            read = this.readState ?: 0,
+            status = this.messageStatus ?: 0,
+            threadId = this.threadId ?: 0
         )
     }
     
@@ -899,11 +897,12 @@ class RestoreManager(
      */
     private fun ModelCallLog.toCallLogEntity(): CallLogsEntity {
         return CallLogsEntity(
-            id = this.id,
+            // 使用固定值0代替id，让Room自动生成主键
+            id = 0L,
             number = this.number,
             name = this.contact ?: "",
-            date = this.date,
-            duration = this.duration,
+            date = this.date.toLong(),
+            duration = this.duration.toLong(),
             type = this.type
         )
     }
@@ -923,7 +922,7 @@ class RestoreManager(
             type = this.type,
             read = this.readState,
             status = this.messageStatus,
-            threadId = this.threadId ?: 0
+            threadId = this.threadId?.toLong() ?: 0L
         )
     }
     
@@ -961,6 +960,7 @@ class RestoreManager(
     companion object {
         private const val BACKUP_FORMAT_VERSION = SUPPORTED_VERSION
         const val DEFAULT_SMS_REQUEST_CODE = 1001
+        const val PERMISSIONS_REQUEST_CODE = 1002
     }
     
     /**
@@ -976,27 +976,36 @@ class RestoreManager(
      */
     private fun isDefaultSmsApp(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
-            val isDefault = defaultSmsPackage == context.packageName
-            
-            // 添加详细日志
-            Timber.d("[Mobile] DEBUG [Restore] 默认短信应用检查 - 当前应用: ${context.packageName}, 系统默认: $defaultSmsPackage, 是默认: $isDefault")
-            
-            // 检查高版本Android上是否有特殊情况
-            if (!isDefault && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // 在Android 12+上可能有额外的默认应用检查逻辑
-                try {
-                    val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager
-                    if (roleManager != null && roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_SMS)) {
-                        Timber.i("[Mobile] INFO [Restore] RoleManager报告应用持有SMS角色，覆盖默认检查结果")
-                        return true
+            try {
+                // 优先使用RoleManager（Android 10+）
+                var roleManagerResult = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager
+                        if (roleManager != null) {
+                            roleManagerResult = roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_SMS)
+                            Timber.d("[Mobile] DEBUG [Restore] RoleManager检查结果: $roleManagerResult")
+                            if (roleManagerResult) {
+                                return true
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "[Mobile] ERROR [Restore] 检查RoleManager时出错")
                     }
-                } catch (e: Exception) {
-                    Timber.e(e, "[Mobile] ERROR [Restore] 检查RoleManager时出错")
                 }
+                
+                // 如果RoleManager检查未成功或不可用，使用传统方法
+                val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
+                val isTelephonyDefault = defaultSmsPackage == context.packageName
+                
+                // 添加详细日志
+                Timber.d("[Mobile] DEBUG [Restore] 默认短信应用检查 - 当前应用: ${context.packageName}, 系统默认: $defaultSmsPackage, 是默认: $isTelephonyDefault")
+                
+                return isTelephonyDefault
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 检查默认短信应用状态时发生错误")
+                return false
             }
-            
-            return isDefault
         }
         return true // 在较旧版本中不需要是默认短信应用
     }
@@ -1004,30 +1013,236 @@ class RestoreManager(
     /**
      * 请求设置为默认短信应用
      * 
-     * 此方法用于向系统请求将当前应用设置为默认短信应用。它会启动系统的"更改默认短信应用"对话框，
-     * 用户在对话框中可以确认或取消设置。
+     * 此方法用于向系统请求将当前应用设置为默认短信应用。它应该启动来自调用Activity的
+     * ActivityResultLauncher而不是直接调用startActivityForResult。
      * 
      * 在Android 4.4 (KitKat)及以上版本中，只有被设置为默认短信应用的应用才能写入短信数据库。
      * 这是Android系统的安全限制，目的是防止恶意应用滥用短信功能。
      * 
-     * 注意: 调用此方法会打开系统对话框，需要用户交互才能完成设置过程。
-     * 设置结果将通过 onActivityResult 回调返回到 Activity。
-     * 
-     * 流程说明:
-     * 1. 调用此方法打开系统对话框
-     * 2. 用户选择"是"或"否"
-     * 3. 系统返回结果到 onActivityResult
-     * 4. 在 onActivityResult 中检查是否成功设置为默认短信应用
-     * 5. 如果成功，继续恢复短信；如果失败，提示用户并终止恢复过程
-     * 
-     * @param activity 发起请求的Activity，用于接收结果回调
+     * @param activity 发起请求的Activity，用于获取RoleManager和创建Intent
+     * @param launcher ActivityResultLauncher<Intent>用于处理结果回调
      */
-    fun requestDefaultSmsApp(activity: Activity) {
+    fun requestDefaultSmsApp(activity: Activity, launcher: ActivityResultLauncher<Intent>) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
-            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, activity.packageName)
-            activity.startActivityForResult(intent, DEFAULT_SMS_REQUEST_CODE)
+            try {
+                Timber.d("[Mobile] DEBUG [Restore] 开始请求默认短信应用权限，Android版本: ${Build.VERSION.SDK_INT}")
+                var requestSent = false
+                
+                // 尝试使用RoleManager API (Android 10+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val roleManager = activity.getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager
+                        if (roleManager != null) {
+                            // 检查角色是否可用
+                            if (roleManager.isRoleAvailable(android.app.role.RoleManager.ROLE_SMS)) {
+                                // 检查应用是否已持有角色
+                                val hasRole = roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_SMS)
+                                Timber.d("[Mobile] DEBUG [Restore] RoleManager检查结果: $hasRole")
+                                
+                                if (!hasRole) {
+                                    // 使用ActivityResultLauncher请求SMS角色
+                                    val roleRequestIntent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_SMS)
+                                    launcher.launch(roleRequestIntent)
+                                    Timber.d("[Mobile] DEBUG [Restore] 已使用角色管理器发送SMS角色请求")
+                                    requestSent = true
+                                } else {
+                                    Timber.i("[Mobile] INFO [Restore] 应用已持有SMS角色，无需再次请求")
+                                    return
+                                }
+                            } else {
+                                Timber.w("[Mobile] WARN [Restore] 此设备的RoleManager不支持SMS角色")
+                            }
+                        } else {
+                            Timber.w("[Mobile] WARN [Restore] 无法获取RoleManager服务")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "[Mobile] ERROR [Restore] 使用RoleManager请求SMS角色失败: ${e.message}")
+                    }
+                }
+                
+                // 如果RoleManager方法未成功，使用传统方法
+                if (!requestSent) {
+                    // 传统方法（适用于Android 4.4+）
+                    val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                    intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, activity.packageName)
+                    
+                    if (intent.resolveActivity(activity.packageManager) != null) {
+                        launcher.launch(intent)
+                        Timber.d("[Mobile] DEBUG [Restore] 已发送默认短信应用请求（传统方法）")
+                        requestSent = true
+                    } else {
+                        Timber.w("[Mobile] WARN [Restore] 无法找到处理默认短信应用请求的系统组件")
+                    }
+                }
+                
+                // 如果上面的方法都失败，尝试使用备选方法
+                if (!requestSent) {
+                    // 尝试打开系统默认应用设置页面
+                    try {
+                        // 先尝试使用默认应用设置页面
+                        val defaultAppsIntent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                        if (defaultAppsIntent.resolveActivity(activity.packageManager) != null) {
+                            activity.startActivity(defaultAppsIntent)
+                            Timber.d("[Mobile] DEBUG [Restore] 已打开默认应用设置页面")
+                            
+                            // 提示用户手动设置
+                            Toast.makeText(
+                                activity, 
+                                "请在默认应用设置中将本应用设为默认短信应用", 
+                                Toast.LENGTH_LONG
+                            ).show()
+                            requestSent = true
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "[Mobile] ERROR [Restore] 无法打开默认应用设置: ${e.message}")
+                    }
+                    
+                    // 如果默认应用设置页面也失败，尝试应用详情页
+                    if (!requestSent) {
+                        try {
+                            val settingsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            settingsIntent.data = Uri.parse("package:" + activity.packageName)
+                            activity.startActivity(settingsIntent)
+                            Timber.w("[Mobile] WARN [Restore] 无法直接请求默认短信权限，已打开应用设置页面")
+                            
+                            // 提示用户在设置中手动授予权限
+                            Toast.makeText(
+                                activity, 
+                                "请在应用设置中授予短信相关权限，然后设置为默认短信应用", 
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } catch (e: Exception) {
+                            Timber.e(e, "[Mobile] ERROR [Restore] 无法打开应用设置: ${e.message}")
+                            
+                            // 最后的尝试：打开系统设置主页
+                            try {
+                                val mainSettingsIntent = Intent(Settings.ACTION_SETTINGS)
+                                activity.startActivity(mainSettingsIntent)
+                                Toast.makeText(
+                                    activity,
+                                    "请在系统设置中找到应用管理，将本应用设为默认短信应用",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } catch (finalException: Exception) {
+                                Timber.e(finalException, "[Mobile] ERROR [Restore] 无法打开系统设置: ${finalException.message}")
+                                Toast.makeText(
+                                    activity,
+                                    "无法自动打开设置，请手动将本应用设为默认短信应用",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "[Mobile] ERROR [Restore] 请求默认短信应用权限失败: ${e.message}")
+                Toast.makeText(
+                    activity,
+                    "无法请求默认短信应用权限: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
+    }
+    
+    /**
+     * 检测是否在模拟器环境中运行
+     */
+    private fun isEmulator(): Boolean {
+        return (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+                || Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.startsWith("unknown")
+                || Build.HARDWARE.contains("goldfish")
+                || Build.HARDWARE.contains("ranchu")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.MANUFACTURER.contains("Genymotion")
+                || Build.PRODUCT.contains("sdk_google")
+                || Build.PRODUCT.contains("google_sdk")
+                || Build.PRODUCT.contains("sdk")
+                || Build.PRODUCT.contains("sdk_x86")
+                || Build.PRODUCT.contains("vbox86p")
+                || Build.PRODUCT.contains("emulator")
+                || Build.PRODUCT.contains("simulator")
+    }
+    
+    /**
+     * 检查并请求所需权限
+     * 
+     * 此方法检查恢复所需的权限，并根据需要请求缺失的权限。
+     * 适用于Android 6.0+的动态权限请求。
+     * 
+     * @param activity 发起请求的Activity
+     * @param requestCode 权限请求代码
+     * @return 如果所有权限都已授予则返回true，否则返回false
+     */
+    fun checkAndRequestPermissions(activity: Activity, requestCode: Int): Boolean {
+        // 所需权限列表
+        val requiredPermissions = mutableListOf<String>()
+        
+        // 检查SMS权限
+        if (!hasSmsPermissions()) {
+            requiredPermissions.add(android.Manifest.permission.READ_SMS)
+            requiredPermissions.add(android.Manifest.permission.SEND_SMS)
+            requiredPermissions.add(android.Manifest.permission.RECEIVE_SMS)
+        }
+        
+        // 检查通话记录权限
+        if (!hasCallLogPermissions()) {
+            requiredPermissions.add(android.Manifest.permission.READ_CALL_LOG)
+            requiredPermissions.add(android.Manifest.permission.WRITE_CALL_LOG)
+        }
+        
+        // 检查联系人权限
+        if (!hasContactsPermissions()) {
+            requiredPermissions.add(android.Manifest.permission.READ_CONTACTS)
+            requiredPermissions.add(android.Manifest.permission.WRITE_CONTACTS)
+        }
+        
+        // 如果有缺失权限，请求它们
+        if (requiredPermissions.isNotEmpty()) {
+            // 在Android 11+，媒体权限可能需要特殊处理
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // 在Android 11+，某些权限可能需要通过Intent请求
+                val specialPermissions = mutableListOf<String>()
+                val normalPermissions = mutableListOf<String>()
+                
+                for (permission in requiredPermissions) {
+                    if (permission == android.Manifest.permission.READ_SMS ||
+                        permission == android.Manifest.permission.READ_CALL_LOG ||
+                        permission == android.Manifest.permission.WRITE_CALL_LOG) {
+                        specialPermissions.add(permission)
+                    } else {
+                        normalPermissions.add(permission)
+                    }
+                }
+                
+                // 先请求普通权限
+                if (normalPermissions.isNotEmpty()) {
+                    activity.requestPermissions(normalPermissions.toTypedArray(), requestCode)
+                }
+                
+                // 对于特殊权限，可能需要引导用户到设置页面
+                if (specialPermissions.isNotEmpty()) {
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        intent.data = Uri.parse("package:" + activity.packageName)
+                        activity.startActivity(intent)
+                        Timber.i("[Mobile] INFO [Restore] 在Android 11+上打开应用设置页面请求特殊权限")
+                    } catch (e: Exception) {
+                        Timber.e(e, "[Mobile] ERROR [Restore] 无法打开应用设置: ${e.message}")
+                    }
+                }
+            } else {
+                // Android 10及以下的正常权限请求
+                activity.requestPermissions(requiredPermissions.toTypedArray(), requestCode)
+                Timber.d("[Mobile] DEBUG [Restore] 请求权限: ${requiredPermissions.joinToString()}")
+            }
+            return false
+        }
+        
+        return true // 所有权限都已授予
     }
 }
 
