@@ -1,170 +1,123 @@
 # MessageVault Mobile
 
-<p align="center">
-  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" width="100" alt="MessageVault Logo">
-</p>
-
 <div align="center">
-  <strong>安全备份和恢复Android短信和通话记录</strong>
-</div>
-<div align="center">
-  使用Material You设计的现代化备份解决方案
+  <img src="app/src/main/res/drawable/ic_launcher_foreground.xml" width="100" height="100" alt="MessageVault Logo">
 </div>
 
 <div align="center">
-  <sub>使用现代Android开发技术构建 • 由JetBrains和Claude 3.7 Sonnet提供支持</sub>
+  <h2>安全备份和恢复Android短信和通话记录</h2>
 </div>
-
-<br />
 
 <div align="center">
-  <!-- 构建状态 -->
-  <a href="#构建状态">
-    <img src="https://img.shields.io/badge/构建-passing-brightgreen.svg"
-      alt="构建状态" />
-  </a>
-  <!-- API版本 -->
-  <a href="#API版本">
-    <img src="https://img.shields.io/badge/API-24%2B-blue.svg"
-      alt="API 24+" />
-  </a>
-  <!-- 许可证 -->
-  <a href="https://github.com/imken/messagevault/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/许可证-MIT-blue.svg"
-      alt="MIT许可证" />
-  </a>
+  <p>使用Material You设计的现代化备份解决方案</p>
 </div>
+
+<div align="center">
+
+[![构建状态](https://img.shields.io/github/actions/workflow/status/MessageVault/MessageVault-Mobile/android.yml?branch=main)](https://github.com/MessageVault/MessageVault-Mobile/actions)
+[![版本](https://img.shields.io/github/v/release/MessageVault/MessageVault-Mobile?include_prereleases)](https://github.com/MessageVault/MessageVault-Mobile/releases)
+[![API](https://img.shields.io/badge/API-24%2B-brightgreen.svg)](https://android-arsenal.com/api?level=24)
+[![许可证](https://img.shields.io/github/license/MessageVault/MessageVault-Mobile)](https://github.com/MessageVault/MessageVault-Mobile/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/MessageVault/MessageVault-Mobile)](https://github.com/MessageVault/MessageVault-Mobile/stargazers)
+[![Issues](https://img.shields.io/github/issues/MessageVault/MessageVault-Mobile)](https://github.com/MessageVault/MessageVault-Mobile/issues)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/MessageVault/MessageVault-Mobile/pulls)
+
+</div>
+
+## ✨ 特性
+
+- 📱 **现代化界面**: 采用Material You设计语言，支持动态取色
+- 🔒 **安全可靠**: 本地优先，无需云存储，保护隐私
+- 📤 **全面备份**: 支持短信、通话记录和联系人的备份
+- 📥 **智能恢复**: 支持选择性恢复，带进度显示
+- 🌍 **多语言**: 支持中文和英文界面
+- 🔄 **状态同步**: 组件间状态实时同步，确保操作流畅
 
 ## 📱 功能概览
 
-MessageVault Mobile是一个Android应用，用于读取SMS短信和通话记录，将数据安全备份并支持恢复功能。
+MessageVault Mobile是一个专注于Android数据备份与恢复的开源应用。它提供了一个现代化的解决方案，帮助用户安全地管理他们的短信、通话记录和联系人数据。
 
-### ✨ 主要功能亮点
+### 当前功能状态
 
-- 📤 **备份功能**：安全备份短信、通话记录和联系人
-- 📥 **恢复功能**：将备份数据恢复至设备
-- 🎨 **Material You**：现代化Material Design 3界面，支持动态颜色
-- 🌐 **多语言支持**：内置中文和英文界面
-- 🔐 **隐私优先**：本地优先处理，无需云存储
-- 🔄 **组件间状态同步**：确保恢复过程无缝进行
+| 功能 | 状态 | 描述 |
+|------|------|------|
+| 短信备份 | ✅ | 完全支持，包含完整元数据 |
+| 通话记录备份 | ✅ | 完全支持，包含详细通话信息 |
+| 联系人备份 | ✅ | 完全支持，包含所有联系人字段 |
+| 短信恢复 | ✅ | 完全支持，带进度显示 |
+| 通话记录恢复 | ✅ | 完全支持，带状态反馈 |
+| 联系人恢复 | ⏳ | 开发中，基础框架已完成 |
+| 权限管理 | ✅ | 完全支持，包含运行时权限处理 |
 
-## 🚧 当前开发状态
+## 🛠️ 技术栈
 
-**重要提示：** 本项目处于积极开发阶段，功能尚未完全实现。
+- **UI框架**: Jetpack Compose
+- **架构模式**: MVVM
+- **状态管理**: ViewModel + StateFlow
+- **依赖注入**: Hilt (计划中)
+- **数据持久化**: Room + DataStore
+- **并发处理**: Kotlin Coroutines
+- **单元测试**: JUnit + Mockito
 
-### 功能完成度
+## 📦 安装要求
 
-- ✅ **备份功能**：基本可用，支持短信、通话记录和联系人备份
-- ✅ **短信恢复**：已实现，支持进度跟踪和状态同步  
-- ✅ **通话记录恢复**：已实现，包含详细进度报告
-- ⏳ **联系人恢复**：开发中，基本框架已完成
-- ✅ **默认SMS应用检测**：优化完成，支持Android 7.0-14
+- Android 7.0 (API 24) 或更高版本
+- 约20MB存储空间
+- 必要权限：
+  - 读取/写入短信
+  - 读取/写入通话记录
+  - 读取/写入联系人
+  - 存储访问（用于备份文件）
 
-### 测试注意事项
+## 🚀 开始使用
 
-- 在测试前请使用设备自带的备份软件保存您的数据
-- 建议在虚拟机环境中测试恢复功能
-- 恢复短信需要临时将应用设为默认短信应用
-
-## 🛠 开发环境设置
-
-### 系统要求
-
-- **JDK**: 版本17 (OpenJDK 17.0.14)
-- **Gradle**: 版本8.2
-- **Android Studio**: 最新版本推荐（Iguana 或更高版本）
-- **Android SDK**: API 24-34 (Android 7.0 - 14)
-
-### 快速开始
+### 开发环境配置
 
 ```bash
 # 克隆仓库
-git clone https://github.com/imken/messagevault-mobile.git
-cd messagevault-mobile
+git clone https://github.com/MessageVault/MessageVault-Mobile.git
 
-# 构建调试版本
-./gradlew assembleDebug
+# 进入项目目录
+cd MessageVault-Mobile
 
-# 安装到设备
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 构建项目
+./gradlew build
 ```
 
-## 📚 项目架构
+### 系统要求
 
-MessageVault采用现代Android架构设计，包括：
+- JDK 17 (推荐使用OpenJDK 17.0.14)
+- Android Studio Iguana或更高版本
+- Android SDK (API 24-34)
+- Gradle 8.2+
 
-- **MVVM架构**：使用ViewModel分离UI和业务逻辑
-- **Jetpack Compose**：声明式UI构建
-- **Material Design 3**：支持动态颜色和主题
-- **组件间状态同步**：使用SharedPreferences实现跨组件状态管理
+## 🤝 贡献指南
 
-### 数据流设计
+我们欢迎各种形式的贡献！以下是一些参与项目的方式：
 
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  内容提供者  │───▶│  业务模型   │───▶│   UI模型    │
-└─────────────┘    └─────────────┘    └─────────────┘
-       │                  │                  │
-       │                  │                  │
-       ▼                  ▼                  ▼
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  系统数据   │◀───│   JSON文件  │◀───│ Compose UI  │
-└─────────────┘    └─────────────┘    └─────────────┘
-```
+- 🐛 提交bug报告
+- 💡 提出新功能建议
+- 📝 改进文档
+- 🔍 审查代码
 
-### 权限管理
+在提交Pull Request之前，请确保：
 
-应用需要以下权限以实现完整功能：
+1. 遵循项目的代码风格
+2. 添加必要的测试
+3. 更新相关文档
+4. 描述清楚改动的目的和影响
 
-- `READ_SMS`：读取短信记录
-- `SEND_SMS`：恢复短信（替代WRITE_SMS）
-- `READ_CALL_LOG` & `WRITE_CALL_LOG`：读取和恢复通话记录
-- `READ_CONTACTS` & `WRITE_CONTACTS`：读取和恢复联系人
-- `INTERNET`：网络通信（可选）
+## 📄 开源协议
 
-## 🔍 特色技术亮点
+本项目采用[GNU General Public License v3.0](LICENSE)开源协议。
 
-### 默认短信应用检测优化
+## 🙏 鸣谢
 
-为解决高版本Android上的短信恢复问题，我们实现了多层次检测机制：
+- [Jetpack Compose](https://developer.android.com/jetpack/compose)
+- [Material Design 3](https://m3.material.io/)
+- [Android Jetpack](https://developer.android.com/jetpack)
 
-```kotlin
-// 优先使用RoleManager (Android 10+)
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-    val roleManager = getSystemService(Context.ROLE_SERVICE) as? RoleManager
-    if (roleManager?.isRoleHeld(RoleManager.ROLE_SMS) == true) {
-        // 是默认短信应用
-    }
-}
+## 📬 联系我们
 
-// 传统方法作为备选
-val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(context)
-val isSmsApp = packageName == defaultSmsPackage
-```
-
-### 组件间状态同步
-
-通过SharedPreferences实现组件间的状态同步：
-
-```kotlin
-// 保存状态
-getSharedPreferences("sms_app_status", Context.MODE_PRIVATE).edit()
-    .putBoolean("is_default_sms_app", true)
-    .apply()
-
-// 读取状态
-val prefs = context.getSharedPreferences("sms_app_status", Context.MODE_PRIVATE)
-val isDefault = prefs.getBoolean("is_default_sms_app", false)
-```
-
-## 📋 变更日志
-
-查看[变更日志](CHANGELOG.md)获取详细更新历史。
-
-## 🤝 贡献
-
-欢迎提交Issue和Pull Request。请遵循项目的编码规范。
-
-## 📄 许可证
-
-MIT 
+- 提交Issue: [GitHub Issues](https://github.com/MessageVault/MessageVault-Mobile/issues)
+- 项目讨论: [GitHub Discussions](https://github.com/MessageVault/MessageVault-Mobile/discussions)
